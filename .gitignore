@@ -1,0 +1,24 @@
+# Projucer-generated code
+JuceLibraryCode/
+
+# Xcode build output
+Builds/MacOSX/build/
+Builds/MacOSX/*.xcodeproj/xcuserdata/
+Builds/MacOSX/*.xcodeproj/project.xcworkspace/xcuserdata/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Compiled plugin outputs
+*.vst3
+*.component
+*.aaxplugin
+*.app
+
+# OS cruft
+.DS_Store
+
+# Editor / misc
+*.swp
+*.swo
+*~

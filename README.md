@@ -14,10 +14,6 @@ A saturation/clipping plugin built with JUCE, featuring alias-free oversampled d
 - **Live Visualizer** — dual input/output waveform display with peak/RMS traces, peak-hold indicators, gain reduction and overage metering
 - **Cat Mascot** — an animated cat that idles, perks up, gets nervous, or panics based on your output level and clipping activity
 
-## Screenshots
-
-*(Add screenshots of the plugin UI here)*
-
 ## Requirements
 
 - **JUCE** (developed with Projucer — see the `.jucer` file for module configuration)

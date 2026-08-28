@@ -207,7 +207,7 @@ namespace Params
         layout.add(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID(IDs::SAT_MODE_ID, 1),
             Names::SAT_MODE,
-            juce::StringArray { "Clean", "Tube", "Tape", "Solid State", "Asymmetric" },
+            juce::StringArray { "Clean", "Tube", "Tape", "Solid", "Asym" },
             static_cast<int>(SaturationMode::Clean)));
 
         return layout;

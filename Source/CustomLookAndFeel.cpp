@@ -195,13 +195,16 @@ void CustomLookAndFeel::drawRotarySlider(juce::Graphics& g,
     const bool  bipolar = (name == "inputGain" || name == "outputGain" || name == "ceiling");
     const float midAngle = (rotaryStartAngle + rotaryEndAngle) * 0.5f;
     const float arcFrom = bipolar ? midAngle : rotaryStartAngle;
+    const bool hovered = slider.isMouseOverOrDragging();
+    const bool pressed = slider.isMouseButtonDown();
+    const float lift = pressed ? 0.0f : (hovered ? 1.0f : 0.35f);
 
     // ── 1. Track ring — solid colour, clearly visible on Windows ─────────
     {
         juce::Path track;
         track.addCentredArc(cx, cy, r, r, 0.f, rotaryStartAngle, rotaryEndAngle, true);
         // Use a solid pre-mixed colour rather than alpha-dimmed cream
-        g.setColour(Palette::borderMid);
+        g.setColour(Palette::borderMid.withAlpha(0.92f));
         g.strokePath(track, juce::PathStrokeType(1.5f,
             juce::PathStrokeType::curved,
             juce::PathStrokeType::rounded));
@@ -212,7 +215,7 @@ void CustomLookAndFeel::drawRotarySlider(juce::Graphics& g,
     {
         juce::Path arc;
         arc.addCentredArc(cx, cy, r, r, 0.f, arcFrom, angle, true);
-        g.setColour(arcCol);
+        g.setColour(arcCol.brighter(pressed ? 0.0f : 0.12f));
         g.strokePath(arc, juce::PathStrokeType(2.5f,
             juce::PathStrokeType::curved,
             juce::PathStrokeType::rounded));

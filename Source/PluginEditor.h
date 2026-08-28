@@ -6,8 +6,6 @@
 #include "VisualizerComponent.h"
 
 //==============================================================================
-// Palette — mirrors CustomLookAndFeel.cpp, used for inline colour literals
-//==============================================================================
 namespace EditorPalette
 {
     static const juce::Colour dark    { 0xff110b11 };
@@ -23,8 +21,6 @@ namespace EditorPalette
 }
 
 //==============================================================================
-// SatModeSelector — 2-row × 3-col grid of pill buttons
-//==============================================================================
 class SatModeSelector : public juce::Component
 {
 public:
@@ -38,13 +34,9 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        const auto  b  = getLocalBounds().toFloat();
-        const float W  = b.getWidth();
-        const float H  = b.getHeight();
-
-        // Grid: 3 cols × 2 rows
-        const float cellW = W / 3.0f;
-        const float cellH = H / 2.0f;
+        const auto b = getLocalBounds().toFloat();
+        const float cellW = b.getWidth() / 3.0f;
+        const float cellH = b.getHeight() / 2.0f;
         const float pad   = 2.5f;
         const float r     = 4.0f;
 
@@ -59,12 +51,11 @@ public:
             const int row = i / 3;
             const bool active = (i == activeMode + 1); // mode -1 = NONE = index 0
 
-            const float cx = b.getX() + col * cellW + pad;
-            const float cy = b.getY() + row * cellH + pad;
-            const float cw = cellW - pad * 2.0f;
-            const float ch = cellH - pad * 2.0f;
-
-            const juce::Rectangle<float> cell(cx, cy, cw, ch);
+            const juce::Rectangle<float> cell(
+                b.getX() + col * cellW + pad,
+                b.getY() + row * cellH + pad,
+                cellW - pad * 2.0f,
+                cellH - pad * 2.0f);
 
             if (active)
             {
@@ -81,39 +72,38 @@ public:
                 g.drawRoundedRectangle(cell.reduced(0.5f), r, 0.5f);
             }
 
-            g.setColour(active ? EditorPalette::cream
-                               : EditorPalette::cream.withAlpha(0.36f));
-            g.drawText(modeLabels[i], cell.toNearestInt(),
-                       juce::Justification::centred);
+            g.setColour(active ? EditorPalette::cream : EditorPalette::cream.withAlpha(0.36f));
+            g.drawText(modeLabels[i], cell.toNearestInt(), juce::Justification::centred);
         }
     }
 
     void mouseDown(const juce::MouseEvent& e) override
     {
-        const float cellW = (float)getWidth()  / 3.0f;
+        const float cellW = (float)getWidth() / 3.0f;
         const float cellH = (float)getHeight() / 2.0f;
-        const int   col   = juce::jlimit(0, 2, (int)(e.position.x / cellW));
-        const int   row   = juce::jlimit(0, 1, (int)(e.position.y / cellH));
-        const int   idx   = row * 3 + col;       // 0-5
-        const int   newMode = idx - 1;            // -1 = NONE
+        const int col = juce::jlimit(0, 2, (int)(e.position.x / cellW));
+        const int row = juce::jlimit(0, 1, (int)(e.position.y / cellH));
+        const int idx = row * 3 + col;
+        const int newMode = idx - 1;
 
-        if (newMode == activeMode) return;
+        if (newMode == activeMode)
+            return;
+
         activeMode = newMode;
         repaint();
-        if (onModeChanged) onModeChanged(newMode);
+
+        if (onModeChanged)
+            onModeChanged(newMode);
     }
 
 private:
     static constexpr int numModes = 6;
-    const char* modeLabels[numModes] = { "NONE", "CLEAN", "TUBE", "TAPE", "SS", "ASYM" };
+    const char* modeLabels[numModes] = { "NONE", "CLEAN", "TUBE", "TAPE", "SOLID", "ASYM" };
     int activeMode = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SatModeSelector)
 };
 
-
-//==============================================================================
-// ViveAudioProcessorEditor
 //==============================================================================
 class ViveAudioProcessorEditor : public juce::AudioProcessorEditor,
                                   private juce::Timer
@@ -123,61 +113,54 @@ public:
     ~ViveAudioProcessorEditor() override;
 
     void paint(juce::Graphics&) override;
-    void resized()              override;
+    void resized() override;
 
 private:
-    void timerCallback()        override;
+    void timerCallback() override;
     void applyGenrePreset(int idx);
+    void configureHeader();
+    void configureSaturationSection();
+    void configureKnob(juce::Slider& slider,
+                       juce::Label& nameLabel,
+                       juce::Label& valueLabel,
+                       const char* name,
+                       const char* sliderName,
+                       const juce::String& suffix);
+    void syncSatModeSelector();
 
     ViveAudioProcessor& audioProcessor;
-    CustomLookAndFeel   customLookAndFeel;
+    CustomLookAndFeel customLookAndFeel;
+    VisualizerComponent visualizer;
 
-    // ── Layout constants ─────────────────────────────────────────────────
-    // New horizontal layout:
-    //   Header bar on top, full width
-    //   Visualizer below header, full width
-    //   Controls strip at bottom: [knobs | divider | sat panel]
-    static constexpr int headerH   = 50;   // header bar height
-    static constexpr int controlsH = 108;  // bottom strip height
-    static constexpr int satPanelW = 168;  // sat selector width
-    static constexpr int padX      = 18;   // horizontal outer padding
-    static constexpr int padY      = 12;   // vertical inner padding
+    static constexpr int headerH   = 58;
+    static constexpr int controlsH = 126;
+    static constexpr int satPanelW = 176;
+    static constexpr int padX      = 20;
+    static constexpr int padY      = 14;
 
-    // ── Resizing ─────────────────────────────────────────────────────────
     juce::ComponentBoundsConstrainer boundsConstrainer;
 
-    // ── Header labels ────────────────────────────────────────────────────
     juce::Label titleLabel;
     juce::Label subtitleLabel;
 
-    // ── Saturation ───────────────────────────────────────────────────────
-    juce::Label     satSectionLabel;
+    juce::Label satSectionLabel;
     SatModeSelector satSelector;
 
-    // ── Knobs + paired labels ─────────────────────────────────────────────
     juce::Slider inputGainSlider, driveSlider, ceilingSlider,
                  mixSlider, outputGainSlider;
 
-    juce::Label  inputGainLabel,  inputGainValue;
-    juce::Label  driveLabel,      driveValue;
-    juce::Label  ceilingLabel,    ceilingValue;
-    juce::Label  mixLabel,        mixValue;
-    juce::Label  outputGainLabel, outputGainValue;
+    juce::Label inputGainLabel,  inputGainValue;
+    juce::Label driveLabel,      driveValue;
+    juce::Label ceilingLabel,    ceilingValue;
+    juce::Label mixLabel,        mixValue;
+    juce::Label outputGainLabel, outputGainValue;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
         inputGainAttachment, driveAttachment, ceilingAttachment,
         mixAttachment, outputGainAttachment;
 
-    // ── Genre (disabled — re-enable when genre preset work resumes) ───────
-    // juce::Label    genreSectionLabel;
-    // juce::ComboBox genreSelector;
-    // std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> genreAttachment;
-
-    // ── Runtime state ─────────────────────────────────────────────────────
     float headerCeilingDb = 0.0f;
     float pulsePhase      = 0.0f;
-
-    // ── State restore guard ───────────────────────────────────────────────
     bool isRestoringState = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ViveAudioProcessorEditor)

@@ -11,15 +11,28 @@ VisualizerComponent::~VisualizerComponent()
 }
 
 //==============================================================================
+// INTERVIEW NOTE: pushSamples() runs on the AUDIO THREAD (called from
+// PluginProcessor::processBlock). Everything in this function must be
+// realtime-safe: no locks, no heap allocation, no blocking calls. The only
+// thing it does that touches shared state is write into the lock-free FIFO.
 void VisualizerComponent::pushSamples (const juce::AudioBuffer<float>& input,
                                         const juce::AudioBuffer<float>& output)
 {
     const int numSamples = input.getNumSamples();
     if (numSamples <= 0) return;
 
+    // Downsample the metering data itself: rather than computing/storing a
+    // MeterFrame for every single audio sample (wasteful — the UI redraws at
+    // 60Hz, far below audio rate), we chunk the block into 128-sample windows
+    // and compute one peak/RMS/etc. value per chunk. This is a classic
+    // control-rate-vs-audio-rate tradeoff applied to metering instead of parameters.
     constexpr int stride       = 128;
     const int     framesToWrite = (numSamples + stride - 1) / stride;
 
+    // prepareToWrite/finishedWrite is the AbstractFifo contract: ask for N slots,
+    // get back up to two index ranges (start1/size1, start2/size2) because the
+    // write may need to WRAP AROUND the circular buffer, then write into fifoBuffer
+    // at those exact indices, then tell the fifo how many you actually wrote.
     int start1, size1, start2, size2;
     fifo.prepareToWrite (framesToWrite, start1, size1, start2, size2);
 
@@ -29,32 +42,58 @@ void VisualizerComponent::pushSamples (const juce::AudioBuffer<float>& input,
         const int chunkLen = juce::jmin (stride, numSamples - s);
 
         MeterFrame frame;
+        // getMagnitude = true PEAK detection: max absolute sample value in the
+        // chunk. Peak answers "did/will this clip" — it reacts instantly to the
+        // single loudest sample, with no averaging.
         const float rawInPeak  = input .getMagnitude (0, s, chunkLen);
         const float rawOutPeak = output.getMagnitude (0, s, chunkLen);
 
+        // Classic asymmetric one-pole envelope follower ("ballistics"):
+        // attackCoeff controls how fast the meter jumps UP toward a new peak,
+        // releaseCoeff controls how slowly it decays back down. Using a much
+        // faster attack than release (0.70 vs a *multiplicative* decay of 0.92,
+        // i.e. ~8% loss per chunk) is what gives a peak meter its familiar
+        // "snap up instantly, fall gently" visual behavior, rather than jittering
+        // with every sample.
         constexpr float attackCoeff  = 0.70f;
         constexpr float releaseCoeff = 0.92f;
 
         auto follow = [&] (float raw, float& state) -> float
         {
-            if (raw > state)  state += (raw - state) * attackCoeff;
-            else              state *= releaseCoeff;
+            if (raw > state)  state += (raw - state) * attackCoeff;  // fast attack toward new peak
+            else              state *= releaseCoeff;                 // slow exponential release
             return state;
         };
 
         frame.inputPeak  = follow (rawInPeak,  smoothedInputPeak);
         frame.outputPeak = follow (rawOutPeak, smoothedOutputPeak);
 
+        // RMS (root-mean-square) is the complementary measurement to peak:
+        // it reflects perceived LOUDNESS/energy over the window rather than
+        // the single hottest sample — see calculateChunkRms below for the math.
         frame.inputRms  = calculateChunkRms (input,  s, chunkLen);
         frame.outputRms = calculateChunkRms (output, s, chunkLen);
 
+        // Convert linear peak amplitude to dB: dB = 20*log10(amplitude).
+        // gainToDecibels(x, floorDb) clamps the result at floorDb (-144 here,
+        // i.e. below the practical noise floor of a 24-bit signal) to avoid
+        // -inf when the signal is exactly silent (log10(0) is undefined).
         const float preDb  = juce::Decibels::gainToDecibels (juce::jmax (rawInPeak,  1e-6f), -144.0f);
         const float postDb = juce::Decibels::gainToDecibels (juce::jmax (rawOutPeak, 1e-6f), -144.0f);
 
+        // Gain reduction = how many dB quieter the output got vs the input at
+        // this instant. jmin(0, ...) clamps to "reduction only" — if output is
+        // somehow louder than input (e.g. makeup gain in the saturator), that's
+        // not "gain reduction" in the classic compressor-meter sense, so it's
+        // floored at 0 dB rather than showing a positive number.
         frame.gainReductionDb = juce::jmin (0.0f, postDb - preDb);
         frame.isClipping      = rawOutPeak > clippingThreshold;
         frame.isSoftClipping  = !frame.isClipping && rawOutPeak > softClippingThreshold;
 
+        // "Overage" = how far the INPUT peak (pre-clip) exceeds the ceiling,
+        // in dB — i.e. how hard the clipper is having to work right now, useful
+        // as a "you're pushing this X dB into the ceiling" readout distinct from
+        // the boolean isClipping flag.
         const float ceilingDb = juce::Decibels::gainToDecibels (clippingThreshold, -144.0f);
         frame.overageDb = juce::jmax (0.0f, preDb - ceilingDb);
 
@@ -69,9 +108,15 @@ void VisualizerComponent::pushSamples (const juce::AudioBuffer<float>& input,
 }
 
 //==============================================================================
+// timerCallback runs on the UI/MESSAGE THREAD at 60Hz (see startTimerHz in the
+// constructor). This is the "consumer" side of the lock-free FIFO — safe to
+// allocate, safe to touch juce::Component state, safe to call repaint() here.
 void VisualizerComponent::timerCallback()
 {
     // ── Drain FIFO into frameHistory ──────────────────────────────────────
+    // prepareToRead/finishedRead is the reader half of the AbstractFifo contract,
+    // mirroring prepareToWrite/finishedWrite above. Passing fifoSize just means
+    // "give me as much as is currently available, up to the full buffer."
     int start1, size1, start2, size2;
     fifo.prepareToRead (fifoSize, start1, size1, start2, size2);
 
@@ -82,10 +127,16 @@ void VisualizerComponent::timerCallback()
 
     fifo.finishedRead (size1 + size2);
 
+    // Ring-buffer trim: cap how much waveform history is kept on screen so
+    // frameHistory doesn't grow unbounded and paint() stays O(maxFrames) instead
+    // of O(session length).
     while (static_cast<int> (frameHistory.size()) > maxFrames)
         frameHistory.pop_front();
 
     // ── Overage smoother ──────────────────────────────────────────────────
+    // Same fast-attack/slow-release ballistics idea as the peak follower in
+    // pushSamples, just applied at UI-frame rate (60Hz) instead of audio-chunk
+    // rate, and with additive rather than multiplicative release (linear decay).
     if (!frameHistory.empty())
     {
         float peakOverage = 0.0f;
@@ -103,6 +154,11 @@ void VisualizerComponent::timerCallback()
     }
 
     // ── Peak hold (UI thread) ─────────────────────────────────────────────
+    // Classic "peak hold" meter ballistics: when a new peak arrives, latch it
+    // and hold it visually for peakHoldDuration frames (~1.5s @ 60Hz) before
+    // letting it decay linearly. This is why hardware/software meters show a
+    // little static line that "remembers" the last loud peak instead of the
+    // needle immediately snapping back down.
     {
         const float latestIn  = frameHistory.empty() ? 0.0f : frameHistory.back().inputPeak;
         const float latestOut = frameHistory.empty() ? 0.0f : frameHistory.back().outputPeak;
@@ -129,6 +185,8 @@ void VisualizerComponent::timerCallback()
     }
 
     // ── Cat state ─────────────────────────────────────────────────────────
+    // Purely cosmetic UI state machine driven off output peak level / clipping
+    // flag — not DSP, just a fun visual layer on top of the metering data above.
     {
         const float outPeak = frameHistory.empty() ? 0.0f : frameHistory.back().outputPeak;
         const bool  clipping = !frameHistory.empty() && frameHistory.back().isClipping;
@@ -198,10 +256,23 @@ void VisualizerComponent::mouseDown (const juce::MouseEvent& e)
 }
 
 //==============================================================================
+// INTERVIEW NOTE: this remaps a linear 0..1 peak value onto a non-linear (roughly
+// logarithmic/dB-scaled) 0..1 vertical position for the meter display, using
+// PIECEWISE-LINEAR segments in dB space with different slopes per range. This
+// mimics how real hardware/analog VU-style meters allocate MORE physical screen
+// space to the loud end (near 0dB, where clipping decisions matter) and
+// compress the quiet end (below -24dB) into a small sliver — because the human
+// ear and the engineering decisions that matter both care disproportionately
+// about levels near the ceiling, not small differences at -50dB.
 static inline float peakToNorm (float linearPeak) noexcept
 {
     const float db = juce::Decibels::gainToDecibels (juce::jmax (linearPeak, 1e-6f), -144.0f);
 
+    // Each branch is a linear interpolation (lerp) within one dB range, mapped
+    // onto a hand-tuned slice of the 0..1 output range — the breakpoints
+    // (0, -6, -12, -24 dB) are the classic "meter ballistics" dB markers you'll
+    // see on hardware meters, each getting proportionally more screen real estate
+    // the closer it is to 0dB/clipping.
     if (db >=   0.0f) return juce::jlimit (0.0f, 1.0f, 0.82f + (db / 5.0f) * 0.18f);
     if (db >=  -6.0f) return juce::jlimit (0.0f, 1.0f, 0.62f + (db +  6.0f) /  6.0f * 0.20f);
     if (db >= -12.0f) return juce::jlimit (0.0f, 1.0f, 0.44f + (db + 12.0f) /  6.0f * 0.18f);
@@ -657,6 +728,10 @@ void VisualizerComponent::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+// NOTE: paintCat() below is purely cosmetic mascot rendering (path drawing for
+// ears/eyes/tail/whiskers etc.), driven by the CatState set in timerCallback.
+// Not DSP-relevant — safe to skim past in an interview unless asked about UI/
+// animation architecture specifically.
 void VisualizerComponent::paintCat (juce::Graphics& g,
                                      float cx, float cy, float scale) const
 {
@@ -1190,6 +1265,10 @@ void VisualizerComponent::paintCat (juce::Graphics& g,
 }
 
 //==============================================================================
+// INTERVIEW NOTE: this is the textbook RMS formula — sqrt(mean(x^2)) — computed
+// across ALL channels pooled together (count accumulates numSamples per channel),
+// so a stereo signal's RMS here reflects combined energy across both channels
+// rather than per-channel RMS. Worth being explicit about that distinction if asked.
 float VisualizerComponent::calculateRms (const juce::AudioBuffer<float>& buffer) const
 {
     return calculateChunkRms (buffer, 0, buffer.getNumSamples());
@@ -1198,7 +1277,9 @@ float VisualizerComponent::calculateRms (const juce::AudioBuffer<float>& buffer)
 float VisualizerComponent::calculateChunkRms (const juce::AudioBuffer<float>& buffer,
                                                int startSample, int numSamples) const
 {
-    double sum   = 0.0;
+    double sum   = 0.0;  // accumulate in double even though samples are float —
+                         // avoids precision loss when summing many small squared
+                         // values over a long buffer (classic accumulator pattern).
     int    count = 0;
 
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
@@ -1207,12 +1288,12 @@ float VisualizerComponent::calculateChunkRms (const juce::AudioBuffer<float>& bu
         for (int i = 0; i < numSamples; ++i)
         {
             const double sv = data[i];
-            sum += sv * sv;
+            sum += sv * sv;   // mean-SQUARE step
         }
         count += numSamples;
     }
 
-    return count > 0 ? static_cast<float> (std::sqrt (sum / count)) : 0.0f;
+    return count > 0 ? static_cast<float> (std::sqrt (sum / count)) : 0.0f;  // ROOT of the mean
 }
 
 void VisualizerComponent::resized() {}
@@ -1220,5 +1301,8 @@ void VisualizerComponent::resized() {}
 void VisualizerComponent::setClippingThreshold (float newThresholdLinear)
 {
     clippingThreshold     = juce::jlimit (0.1f, 2.0f, newThresholdLinear);
+    // Soft-clip knee always sits at 95% of the hard ceiling — keeps a small
+    // buffer zone between "starting to round off" and "hard limit", regardless
+    // of what the user sets the ceiling to.
     softClippingThreshold = clippingThreshold * 0.95f;
 }

@@ -17,7 +17,11 @@ struct MeterFrame
     bool  isSoftClipping = false;
 };
 
+
 //==============================================================================
+// INTERVIEW NOTE: this component is a good example to talk through for
+// "how do you get audio-thread data safely onto the UI" — see the FIFO members
+// near the bottom and pushSamples()/timerCallback() in the .cpp.
 class VisualizerComponent : public juce::Component,
                              private juce::Timer
 {
@@ -29,12 +33,15 @@ public:
     void resized   ()                           override;
     void mouseDown (const juce::MouseEvent&)    override;
 
+    // Called from the AUDIO THREAD (see PluginProcessor::processBlock).
+    // Must be lock-free / non-blocking / non-allocating.
     void pushSamples (const juce::AudioBuffer<float>& input,
                       const juce::AudioBuffer<float>& output);
 
     void setClippingThreshold (float newThresholdLinear);
 
 private:
+    // Called on the UI/message thread at 60Hz (see startTimerHz in the .cpp).
     void timerCallback() override;
 
     float calculateRms      (const juce::AudioBuffer<float>& buffer) const;
@@ -68,10 +75,18 @@ private:
     void paintCat (juce::Graphics& g, float cx, float cy, float scale) const;
 
     // ── FIFO ──────────────────────────────────────────────────────────────
+    // INTERVIEW NOTE: juce::AbstractFifo implements a lock-free circular buffer
+    // index scheme suitable for exactly ONE writer thread (audio, via pushSamples)
+    // and ONE reader thread (UI, via timerCallback's prepareToRead/finishedRead).
+    // It hands out index RANGES for you to read/write into a buffer you own
+    // (fifoBuffer below) — it does not move the data itself, and it never blocks
+    // or takes a lock, which is exactly what's required on the audio thread.
     static constexpr int fifoSize = 4096;
     juce::AbstractFifo   fifo { fifoSize };
     std::array<MeterFrame, fifoSize> fifoBuffer;
 
+    // History ring for the on-screen waveform trace, owned/mutated only by the
+    // UI thread (populated by draining the fifo in timerCallback).
     std::deque<MeterFrame> frameHistory;
     static constexpr int   maxFrames = 800;
 
@@ -87,6 +102,8 @@ private:
     bool showOutput = true;
 
     // ── Peak smoothers (audio-thread side, written in pushSamples) ────────
+    // Simple one-pole attack/release envelope followers — see the `follow`
+    // lambda in pushSamples() for the actual attack/release math.
     float smoothedInputPeak  = 0.0f;
     float smoothedOutputPeak = 0.0f;
 

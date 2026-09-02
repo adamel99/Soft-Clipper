@@ -75,17 +75,34 @@ void ViveAudioProcessor::updateGenreParameter(int presetIndex)
         genreParam->getNormalisableRange().convertTo0to1(static_cast<float>(clampedIndex)));
 }
 
+bool ViveAudioProcessor::isSupportedStateXml(const juce::XmlElement& xmlState) const
+{
+    if (xmlState.hasTagName(apvts.state.getType()))
+        return true;
+
+    return xmlState.getChildByName(apvts.state.getType()) != nullptr;
+}
+
 bool ViveAudioProcessor::restoreStateFromXml(const juce::XmlElement& xmlState)
 {
+    if (! isSupportedStateXml(xmlState))
+        return false;
+
+    const int formatVersion = xmlState.getIntAttribute("formatVersion", 0);
+    if (formatVersion > stateFormatVersion)
+        return false;
+
     if (xmlState.hasTagName(apvts.state.getType()))
     {
         apvts.replaceState(juce::ValueTree::fromXml(xmlState));
+        cacheParameterPointers();
         return true;
     }
 
     if (auto* child = xmlState.getChildByName(apvts.state.getType()))
     {
         apvts.replaceState(juce::ValueTree::fromXml(*child));
+        cacheParameterPointers();
         return true;
     }
 
@@ -190,10 +207,23 @@ bool ViveAudioProcessor::isMidiEffect() const
 }
 
 double ViveAudioProcessor::getTailLengthSeconds() const { return 0.0; }
-int    ViveAudioProcessor::getNumPrograms() { return 1; }
-int    ViveAudioProcessor::getCurrentProgram() { return 0; }
-void   ViveAudioProcessor::setCurrentProgram(int) {}
-const  juce::String ViveAudioProcessor::getProgramName(int) { return {}; }
+int    ViveAudioProcessor::getNumPrograms() { return Params::numFactoryPresets; }
+int    ViveAudioProcessor::getCurrentProgram()
+{
+    return genreParam != nullptr ? juce::jlimit(0, Params::numFactoryPresets - 1, genreParam->getIndex())
+                                 : 0;
+}
+void   ViveAudioProcessor::setCurrentProgram(int index)
+{
+    loadFactoryPreset(index);
+}
+const  juce::String ViveAudioProcessor::getProgramName(int index)
+{
+    if (! juce::isPositiveAndBelow(index, Params::numFactoryPresets))
+        return {};
+
+    return Params::factoryPresets[index].name;
+}
 void   ViveAudioProcessor::changeProgramName(int, const juce::String&) {}
 
 //==============================================================================
@@ -288,6 +318,7 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
     const int numSamples = buffer.getNumSamples();
     const int numChannels = juce::jmin(totalNumInputChannels, totalNumOutputChannels);
     auto* const* bufferChannels = buffer.getArrayOfWritePointers();
+    const auto* const* dryChannels = dryBuffer.getArrayOfReadPointers();
 
     for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear(i, 0, numSamples);
@@ -339,7 +370,7 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
 
             for (int s = 0; s < osNumSamples; ++s)
             {
-                const int baseIdx = juce::jmin(s / oversampleFactor, numSamples - 1);
+                const int baseIdx = juce::jmin(s >> 2, numSamples - 1);
                 const float driveAmount = drivePerSample[static_cast<size_t>(baseIdx)];
                 const float c = ceilingPerSample[static_cast<size_t>(baseIdx)];
                 const auto shaped = shapeSaturation(osSamples[s], driveAmount, satMode, c);
@@ -352,30 +383,21 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
         for (int s = 0; s < numSamples; ++s)
         {
             const float c = ceilingPerSample[static_cast<size_t>(s)];
-            for (int ch = 0; ch < numChannels; ++ch)
-                bufferChannels[ch][s] = clampToCeiling(bufferChannels[ch][s], c);
-        }
-    }
+            const float mix = mixSmoother.getNextValue();
+            const float outGain = outputGainSmoother.getNextValue();
+            const float dryMix = 1.0f - mix;
 
-    for (int s = 0; s < numSamples; ++s)
-    {
-        const float mix = mixSmoother.getNextValue();
-        if (mix < 0.999f)
-        {
             for (int ch = 0; ch < numChannels; ++ch)
             {
-                const float dry = dryBuffer.getReadPointer(ch)[s];
                 float& wet = bufferChannels[ch][s];
-                wet = dry * (1.0f - mix) + wet * mix;
+                wet = clampToCeiling(wet, c);
+
+                if (mix < 0.999f)
+                    wet = dryChannels[ch][s] * dryMix + wet * mix;
+
+                wet *= outGain;
             }
         }
-    }
-
-    for (int s = 0; s < numSamples; ++s)
-    {
-        const float outGain = outputGainSmoother.getNextValue();
-        for (int ch = 0; ch < numChannels; ++ch)
-            bufferChannels[ch][s] *= outGain;
     }
 
     float visualThreshold = ceilingPerSample.empty() ? 1.0f : ceilingPerSample.front();
@@ -458,12 +480,22 @@ bool ViveAudioProcessor::saveUserPreset(const juce::String& presetName)
     xmlState->setAttribute("presetName", trimmedName);
     xmlState->setAttribute("presetType", "user");
     xmlState->setAttribute("pluginName", Params::Branding::productName);
-    xmlState->setAttribute("formatVersion", 1);
+    xmlState->setAttribute("formatVersion", stateFormatVersion);
 
     const auto file = getUserPresetDirectory().getChildFile(makePresetFileName(trimmedName))
         .withFileExtension(Params::Branding::stateFileExtension);
 
-    return file.replaceWithText(xmlState->toString());
+    juce::TemporaryFile tempFile(file);
+    if (auto out = std::unique_ptr<juce::FileOutputStream>(tempFile.getFile().createOutputStream()))
+    {
+        out->writeText(xmlState->toString(), false, false, "\n");
+        out->flush();
+        out.reset();
+
+        return tempFile.overwriteTargetFileWithTemporary();
+    }
+
+    return false;
 }
 
 bool ViveAudioProcessor::loadUserPreset(const juce::String& presetName)
@@ -477,6 +509,14 @@ bool ViveAudioProcessor::loadUserPreset(const juce::String& presetName)
     auto xmlState = std::unique_ptr<juce::XmlElement>(juce::XmlDocument::parse(file));
     if (xmlState == nullptr)
         return false;
+
+    if (xmlState->getStringAttribute("presetType") == "user"
+        && xmlState->getStringAttribute("presetName").isNotEmpty())
+    {
+        const auto expectedName = makePresetFileName(presetName);
+        if (file.getFileNameWithoutExtension() != expectedName)
+            return false;
+    }
 
     return restoreStateFromXml(*xmlState);
 }
@@ -497,7 +537,7 @@ void ViveAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     if (xml != nullptr)
     {
         xml->setAttribute("pluginName", Params::Branding::productName);
-        xml->setAttribute("formatVersion", 1);
+        xml->setAttribute("formatVersion", stateFormatVersion);
         copyXmlToBinary(*xml, destData);
     }
 }

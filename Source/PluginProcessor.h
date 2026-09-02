@@ -99,7 +99,10 @@ private:
     void cacheParameterPointers();
     void applyPresetValues(const Params::FactoryPreset& preset);
     bool restoreStateFromXml(const juce::XmlElement& xmlState);
+    bool isSupportedStateXml(const juce::XmlElement& xmlState) const;
     void updateGenreParameter(int presetIndex);
+
+    static constexpr int stateFormatVersion = 2;
 
     struct SaturationResult
     {

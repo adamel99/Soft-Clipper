@@ -189,7 +189,7 @@ void CustomLookAndFeel::drawRotarySlider(juce::Graphics& g,
         + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
 
     const juce::String name = slider.getName();
-    const bool  isPink = (name == "drive" || name == "ceiling");
+    const bool isPink = (name == "ceiling" || name == "mix" || name == "outputGain");
     const juce::Colour arcCol = isPink ? Palette::pink : Palette::blue;
 
     const bool  bipolar = (name == "inputGain" || name == "outputGain" || name == "ceiling");

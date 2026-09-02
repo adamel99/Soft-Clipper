@@ -3,6 +3,14 @@
 #include "PluginEditor.h"
 #include "VisualizerComponent.h"
 
+namespace
+{
+    static juce::String makePresetFileName(const juce::String& presetName)
+    {
+        return juce::File::createLegalFileName(presetName.trim());
+    }
+}
+
 //==============================================================================
 ViveAudioProcessor::ViveAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -17,10 +25,74 @@ ViveAudioProcessor::ViveAudioProcessor()
 #endif
     apvts(*this, nullptr, "Parameters", Params::createParameterLayout())
 {
+    cacheParameterPointers();
 }
 
 ViveAudioProcessor::~ViveAudioProcessor() {}
 
+void ViveAudioProcessor::cacheParameterPointers()
+{
+    inputGainParam = apvts.getRawParameterValue(Params::IDs::INPUT_GAIN_ID);
+    driveParam = apvts.getRawParameterValue(Params::IDs::DRIVE_ID);
+    ceilingParam = apvts.getRawParameterValue(Params::IDs::CEILING_ID);
+    mixParam = apvts.getRawParameterValue(Params::IDs::MIX_ID);
+    outputGainParam = apvts.getRawParameterValue(Params::IDs::OUTPUT_GAIN_ID);
+
+    satModeParam = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(Params::IDs::SAT_MODE_ID));
+    genreParam = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(Params::IDs::GENRE_ID));
+}
+
+void ViveAudioProcessor::applyPresetValues(const Params::FactoryPreset& preset)
+{
+    auto setParam = [this](const char* id, float value)
+    {
+        if (auto* param = apvts.getParameter(id))
+        {
+            param->setValueNotifyingHost(param->getNormalisableRange().convertTo0to1(value));
+        }
+    };
+
+    setParam(Params::IDs::INPUT_GAIN_ID, preset.inputGainDb);
+    setParam(Params::IDs::DRIVE_ID, preset.drivePercent);
+    setParam(Params::IDs::CEILING_ID, preset.ceilingDb);
+    setParam(Params::IDs::OUTPUT_GAIN_ID, preset.outputGainDb);
+    setParam(Params::IDs::MIX_ID, preset.mixPercent);
+
+    if (auto* satParam = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(Params::IDs::SAT_MODE_ID)))
+    {
+        satParam->setValueNotifyingHost(
+            satParam->getNormalisableRange().convertTo0to1(static_cast<float>(preset.satMode)));
+    }
+}
+
+void ViveAudioProcessor::updateGenreParameter(int presetIndex)
+{
+    if (genreParam == nullptr)
+        return;
+
+    const int clampedIndex = juce::jlimit(0, Params::numFactoryPresets - 1, presetIndex);
+    genreParam->setValueNotifyingHost(
+        genreParam->getNormalisableRange().convertTo0to1(static_cast<float>(clampedIndex)));
+}
+
+bool ViveAudioProcessor::restoreStateFromXml(const juce::XmlElement& xmlState)
+{
+    if (xmlState.hasTagName(apvts.state.getType()))
+    {
+        apvts.replaceState(juce::ValueTree::fromXml(xmlState));
+        return true;
+    }
+
+    if (auto* child = xmlState.getChildByName(apvts.state.getType()))
+    {
+        apvts.replaceState(juce::ValueTree::fromXml(*child));
+        return true;
+    }
+
+    return false;
+}
+
+//==============================================================================
 ViveAudioProcessor::SaturationResult ViveAudioProcessor::shapeSaturation(float sample,
                                                                          float driveAmount,
                                                                          int satMode,
@@ -88,7 +160,7 @@ float ViveAudioProcessor::clampToCeiling(float sample, float ceiling) noexcept
 }
 
 //==============================================================================
-const juce::String ViveAudioProcessor::getName() const { return JucePlugin_Name; }
+const juce::String ViveAudioProcessor::getName() const { return Params::Branding::productName; }
 
 bool ViveAudioProcessor::acceptsMidi() const
 {
@@ -125,37 +197,16 @@ const  juce::String ViveAudioProcessor::getProgramName(int) { return {}; }
 void   ViveAudioProcessor::changeProgramName(int, const juce::String&) {}
 
 //==============================================================================
-// INTERVIEW NOTE: prepareToPlay is the JUCE lifecycle hook called once before
-// playback starts (and again if sampleRate/blockSize change). Anything that
-// depends on sampleRate or needs pre-allocated memory belongs here, NOT in
-// processBlock — processBlock runs on the audio thread and must never allocate
-// (new/delete, resize, etc. can block on the heap allocator or trigger a
-// page fault, both of which can cause an audio dropout/glitch).
 void ViveAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    // JUCE's Oversampling class needs to know the max block size up front so it
-    // can pre-allocate its internal upsampled buffers (size = samplesPerBlock * factor).
     preparedBlockSize = juce::jmax(1, samplesPerBlock);
+
+    cacheParameterPointers();
 
     oversampler.initProcessing(static_cast<size_t>(preparedBlockSize));
     oversampler.reset();
-
-    // The half-band FIR oversampling filters are linear-phase, which means they
-    // introduce a fixed group delay. Reporting it via setLatencySamples lets the
-    // host compensate (PDC — plugin delay compensation) so this track stays in
-    // sample-accurate sync with the rest of the session.
     setLatencySamples(static_cast<int>(oversampler.getLatencyInSamples()));
 
-    satModeParam = dynamic_cast<juce::AudioParameterChoice*>(
-        apvts.getParameter(Params::IDs::SAT_MODE_ID));
-    jassert(satModeParam != nullptr);
-
-    // 20ms smoothing ramp time. INTERVIEW NOTE: SmoothedValue exists to solve
-    // "zipper noise" — if a parameter (gain, mix, etc.) jumps instantly between
-    // audio blocks, you get an audible click/stairstep because the waveform's
-    // amplitude discontinuously steps rather than sliding. Ramping the value
-    // sample-by-sample over ~20ms is fast enough to feel responsive to automation/
-    // knob turns, but slow enough that the ear doesn't perceive a click.
     const double rampSeconds = 0.02;
 
     inputGainSmoother.reset(sampleRate, rampSeconds);
@@ -164,29 +215,19 @@ void ViveAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     mixSmoother.reset(sampleRate, rampSeconds);
     outputGainSmoother.reset(sampleRate, rampSeconds);
 
-    // setCurrentAndTargetValue snaps the smoother immediately to the current
-    // parameter value (no ramp) — this avoids a spurious ramp-in from 0 the
-    // very first time audio is processed after load/reset.
     inputGainSmoother.setCurrentAndTargetValue(
-        juce::Decibels::decibelsToGain(
-            apvts.getRawParameterValue(Params::IDs::INPUT_GAIN_ID)->load()));
+        juce::Decibels::decibelsToGain(inputGainParam != nullptr ? inputGainParam->load() : Params::Ranges::INPUT_GAIN_DEFAULT));
     driveSmoother.setCurrentAndTargetValue(
-        apvts.getRawParameterValue(Params::IDs::DRIVE_ID)->load() / 100.0f);
+        (driveParam != nullptr ? driveParam->load() : Params::Ranges::DRIVE_DEFAULT) / 100.0f);
     ceilingSmoother.setCurrentAndTargetValue(
-        juce::Decibels::decibelsToGain(
-            apvts.getRawParameterValue(Params::IDs::CEILING_ID)->load()));
+        juce::Decibels::decibelsToGain(ceilingParam != nullptr ? ceilingParam->load() : Params::Ranges::CEILING_DEFAULT));
     mixSmoother.setCurrentAndTargetValue(
-        apvts.getRawParameterValue(Params::IDs::MIX_ID)->load() / 100.0f);
+        (mixParam != nullptr ? mixParam->load() : Params::Ranges::MIX_DEFAULT) / 100.0f);
     outputGainSmoother.setCurrentAndTargetValue(
-        juce::Decibels::decibelsToGain(
-            apvts.getRawParameterValue(Params::IDs::OUTPUT_GAIN_ID)->load()));
+        juce::Decibels::decibelsToGain(outputGainParam != nullptr ? outputGainParam->load() : Params::Ranges::OUTPUT_GAIN_DEFAULT));
 
-    // Pre-allocate all working buffers to the max block size up front (RT-safety —
-    // see the "never allocate on the audio thread" note above).
-    dryBuffer.setSize(2, preparedBlockSize);
+    dryBuffer.setSize(2, preparedBlockSize, false, true, true);
     dryBuffer.clear();
-    inputMeterBuffer.setSize(2, preparedBlockSize);
-    inputMeterBuffer.clear();
 
     ceilingPerSample.resize(static_cast<size_t>(preparedBlockSize), 1.0f);
     drivePerSample.resize(static_cast<size_t>(preparedBlockSize), 0.0f);
@@ -219,11 +260,6 @@ bool ViveAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) cons
 #endif
 
 //==============================================================================
-// INTERVIEW NOTE: signal flow through this function, top to bottom, is the
-// classic saturation-plugin pipeline:
-//   input gain -> (dry copy taken here) -> nonlinear drive+clip (oversampled)
-//   -> dry/wet mix -> output gain -> metering
-// Being able to draw this signal chain from memory is a very common ask.
 void ViveAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     juce::MidiBuffer& midiMessages)
 {
@@ -250,99 +286,64 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
     const int totalNumInputChannels = getTotalNumInputChannels();
     const int totalNumOutputChannels = getTotalNumOutputChannels();
     const int numSamples = buffer.getNumSamples();
-    const int numChannels = juce::jmin(totalNumInputChannels,
-        totalNumOutputChannels);
+    const int numChannels = juce::jmin(totalNumInputChannels, totalNumOutputChannels);
+    auto* const* bufferChannels = buffer.getArrayOfWritePointers();
 
-    // If output has more channels than input (e.g. mono-in/stereo-out), the
-    // extra output channels still contain garbage/leftover buffer data from a
-    // previous block unless explicitly cleared — this is boilerplate required
-    // by nearly every JUCE plugin template.
     for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear(i, 0, numSamples);
 
-    // Guard against hosts that send more samples than samplesPerBlock
     if (static_cast<size_t>(numSamples) > drivePerSample.size())
     {
         drivePerSample.resize(static_cast<size_t>(numSamples), 0.0f);
         ceilingPerSample.resize(static_cast<size_t>(numSamples), 1.0f);
     }
 
-    // ── Update smoother targets ───────────────────────────────────────────
-    // NOTE: this reads the atomic parameter values once per block (not once per
-    // sample) — that's fine because the smoother itself interpolates sample-by-
-    // sample toward this target via getNextValue() below. This is the standard
-    // JUCE control-rate-vs-audio-rate split: parameters are polled at block rate,
-    // but the resulting gain trajectory is still audio-rate smooth.
-    inputGainSmoother.setTargetValue(
-        juce::Decibels::decibelsToGain(
-            apvts.getRawParameterValue(Params::IDs::INPUT_GAIN_ID)->load()));
-    driveSmoother.setTargetValue(
-        apvts.getRawParameterValue(Params::IDs::DRIVE_ID)->load() / 100.0f);
-    ceilingSmoother.setTargetValue(
-        juce::Decibels::decibelsToGain(
-            apvts.getRawParameterValue(Params::IDs::CEILING_ID)->load()));
-    mixSmoother.setTargetValue(
-        apvts.getRawParameterValue(Params::IDs::MIX_ID)->load() / 100.0f);
-    outputGainSmoother.setTargetValue(
-        juce::Decibels::decibelsToGain(
-            apvts.getRawParameterValue(Params::IDs::OUTPUT_GAIN_ID)->load()));
+    const float inputGainDb = inputGainParam != nullptr ? inputGainParam->load() : Params::Ranges::INPUT_GAIN_DEFAULT;
+    const float driveValue = driveParam != nullptr ? driveParam->load() : Params::Ranges::DRIVE_DEFAULT;
+    const float ceilingDb = ceilingParam != nullptr ? ceilingParam->load() : Params::Ranges::CEILING_DEFAULT;
+    const float mixValue = mixParam != nullptr ? mixParam->load() : Params::Ranges::MIX_DEFAULT;
+    const float outputGainDb = outputGainParam != nullptr ? outputGainParam->load() : Params::Ranges::OUTPUT_GAIN_DEFAULT;
+
+    inputGainSmoother.setTargetValue(juce::Decibels::decibelsToGain(inputGainDb));
+    driveSmoother.setTargetValue(driveValue / 100.0f);
+    ceilingSmoother.setTargetValue(juce::Decibels::decibelsToGain(ceilingDb));
+    mixSmoother.setTargetValue(mixValue / 100.0f);
+    outputGainSmoother.setTargetValue(juce::Decibels::decibelsToGain(outputGainDb));
 
     const int satMode = satModeParam ? satModeParam->getIndex() : 0;
 
-    // ── Step 1: Input gain ────────────────────────────────────────────────
-    // Sample-accurate gain ramp: getNextValue() advances the smoother's internal
-    // state by exactly one sample each call, so the gain applied at sample N is
-    // slightly different from sample N+1 during a ramp — this is what avoids
-    // zipper noise (see prepareToPlay note above) at the per-sample level.
+    // Apply input gain first, then preserve one dry copy for both the wet/dry mix and the visualizer.
     for (int s = 0; s < numSamples; ++s)
     {
         const float gain = inputGainSmoother.getNextValue();
         for (int ch = 0; ch < numChannels; ++ch)
-            buffer.getWritePointer(ch)[s] *= gain;
+            bufferChannels[ch][s] *= gain;
     }
 
-    // ── Capture post-input-gain signal for visualizer + dry mix ──────────
-    // dryBuffer: preserved so Step 4 can blend it back in for the dry/wet mix
-    //            without needing to "undo" the saturation stage.
-    // inputMeterBuffer: a snapshot purely for UI metering (see visualizer.pushSamples
-    //            at the bottom) — kept separate from `buffer` because `buffer` gets
-    //            mutated destructively by the saturation stage below.
     dryBuffer.makeCopyOf(buffer);
-    inputMeterBuffer.makeCopyOf(buffer);
 
-    // ── Snapshot per-base-sample drive and ceiling values ─────────────────
-    // These parameters need a value at oversampled-rate resolution below, but the
-    // smoothers only run at the original sample rate. So here we advance them once
-    // per *original* sample and cache the sequence; the oversampled loop below maps
-    // each upsampled index back down to the nearest original-rate index (baseIdx)
-    // to look up the correct drive/ceiling for that instant. This avoids having to
-    // run separate smoothers at 4x the sample rate.
     for (int s = 0; s < numSamples; ++s)
     {
         drivePerSample[static_cast<size_t>(s)] = driveSmoother.getNextValue();
         ceilingPerSample[static_cast<size_t>(s)] = ceilingSmoother.getNextValue();
     }
 
-    // ── Steps 2 + 3: Drive (alias-free) + Ceiling clip — inside oversampler ──
-    // Nonlinear shaping happens at 4x rate so the generated harmonics are less
-    // likely to fold back into the audible band before the downsampler filters
-    // them out.
     {
         juce::dsp::AudioBlock<float> block(buffer);
         auto oversampledBlock = oversampler.processSamplesUp(block);
         const int osNumSamples = static_cast<int>(oversampledBlock.getNumSamples());
 
-        for (int s = 0; s < osNumSamples; ++s)
+        for (int ch = 0; ch < numChannels; ++ch)
         {
-            const int baseIdx = juce::jmin(s / oversampleFactor, numSamples - 1);
-            const float driveAmount = drivePerSample[static_cast<size_t>(baseIdx)];
-            const float c = ceilingPerSample[static_cast<size_t>(baseIdx)];
+            float* osSamples = oversampledBlock.getChannelPointer(ch);
 
-            for (int ch = 0; ch < numChannels; ++ch)
+            for (int s = 0; s < osNumSamples; ++s)
             {
-                float& sample = oversampledBlock.getChannelPointer(ch)[s];
-                const auto shaped = shapeSaturation(sample, driveAmount, satMode, c);
-                sample = clampToCeiling(softClipFSC(shaped.sample, c), c);
+                const int baseIdx = juce::jmin(s / oversampleFactor, numSamples - 1);
+                const float driveAmount = drivePerSample[static_cast<size_t>(baseIdx)];
+                const float c = ceilingPerSample[static_cast<size_t>(baseIdx)];
+                const auto shaped = shapeSaturation(osSamples[s], driveAmount, satMode, c);
+                osSamples[s] = clampToCeiling(softClipFSC(shaped.sample, c), c);
             }
         }
 
@@ -352,16 +353,10 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
         {
             const float c = ceilingPerSample[static_cast<size_t>(s)];
             for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float& sample = buffer.getWritePointer(ch)[s];
-                sample = clampToCeiling(sample, c);
-            }
+                bufferChannels[ch][s] = clampToCeiling(bufferChannels[ch][s], c);
         }
     }
 
-    // ── Step 4: Dry/wet mix ───────────────────────────────────────────────
-    // Sample-accurate equal-mix crossfade (linear, not equal-power) between the
-    // pre-saturation dry signal and the fully processed wet signal.
     for (int s = 0; s < numSamples; ++s)
     {
         const float mix = mixSmoother.getNextValue();
@@ -370,28 +365,19 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
             for (int ch = 0; ch < numChannels; ++ch)
             {
                 const float dry = dryBuffer.getReadPointer(ch)[s];
-                float& wet = buffer.getWritePointer(ch)[s];
+                float& wet = bufferChannels[ch][s];
                 wet = dry * (1.0f - mix) + wet * mix;
             }
         }
     }
 
-    // ── Step 5: Output gain ───────────────────────────────────────────────
     for (int s = 0; s < numSamples; ++s)
     {
         const float outGain = outputGainSmoother.getNextValue();
         for (int ch = 0; ch < numChannels; ++ch)
-            buffer.getWritePointer(ch)[s] *= outGain;
+            bufferChannels[ch][s] *= outGain;
     }
 
-    // ── Feed visualizer ───────────────────────────────────────────────────
-    // INTERVIEW NOTE: this is a cross-thread handoff — processBlock runs on the
-    // realtime audio thread, but the visualizer's paint() runs on the message/UI
-    // thread. VisualizerComponent.pushSamples() writes into a lock-free
-    // juce::AbstractFifo (single-producer/single-consumer) rather than directly
-    // mutating UI-owned state, which is the standard safe pattern: the audio
-    // thread must never block on a mutex/lock that the UI thread might be
-    // holding, or you risk priority inversion and audible dropouts.
     float visualThreshold = ceilingPerSample.empty() ? 1.0f : ceilingPerSample.front();
     for (int s = 1; s < numSamples; ++s)
         visualThreshold = juce::jmin(visualThreshold, ceilingPerSample[static_cast<size_t>(s)]);
@@ -399,7 +385,7 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
     if (visualizer != nullptr)
     {
         visualizer->setClippingThreshold(visualThreshold);
-        visualizer->pushSamples(inputMeterBuffer, buffer);
+        visualizer->pushSamples(dryBuffer, buffer);
     }
 }
 
@@ -412,19 +398,115 @@ juce::AudioProcessorEditor* ViveAudioProcessor::createEditor()
 }
 
 //==============================================================================
+juce::StringArray ViveAudioProcessor::getFactoryPresetNames() const
+{
+    juce::StringArray names;
+    for (const auto& preset : Params::factoryPresets)
+        names.add(preset.name);
+    return names;
+}
+
+juce::StringArray ViveAudioProcessor::getUserPresetNames() const
+{
+    juce::StringArray names;
+    const auto directory = getUserPresetDirectory();
+
+    if (! directory.exists())
+        return names;
+
+    juce::Array<juce::File> files;
+    directory.findChildFiles(files, juce::File::findFiles, false, "*." + Params::Branding::stateFileExtension);
+    files.sort();
+
+    for (const auto& file : files)
+        names.add(file.getFileNameWithoutExtension());
+
+    return names;
+}
+
+juce::File ViveAudioProcessor::getUserPresetDirectory() const
+{
+    auto directory = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile(Params::Branding::shortName)
+        .getChildFile("Presets");
+
+    directory.createDirectory();
+    return directory;
+}
+
+bool ViveAudioProcessor::loadFactoryPreset(int presetIndex)
+{
+    if (presetIndex < 0 || presetIndex >= Params::numFactoryPresets)
+        return false;
+
+    const auto& preset = Params::factoryPresets[presetIndex];
+    applyPresetValues(preset);
+    updateGenreParameter(presetIndex);
+    return true;
+}
+
+bool ViveAudioProcessor::saveUserPreset(const juce::String& presetName)
+{
+    const auto trimmedName = presetName.trim();
+    if (trimmedName.isEmpty())
+        return false;
+
+    auto xmlState = std::unique_ptr<juce::XmlElement>(apvts.copyState().createXml());
+    if (xmlState == nullptr)
+        return false;
+
+    xmlState->setAttribute("presetName", trimmedName);
+    xmlState->setAttribute("presetType", "user");
+    xmlState->setAttribute("pluginName", Params::Branding::productName);
+    xmlState->setAttribute("formatVersion", 1);
+
+    const auto file = getUserPresetDirectory().getChildFile(makePresetFileName(trimmedName))
+        .withFileExtension(Params::Branding::stateFileExtension);
+
+    return file.replaceWithText(xmlState->toString());
+}
+
+bool ViveAudioProcessor::loadUserPreset(const juce::String& presetName)
+{
+    const auto file = getUserPresetDirectory().getChildFile(makePresetFileName(presetName))
+        .withFileExtension(Params::Branding::stateFileExtension);
+
+    if (! file.existsAsFile())
+        return false;
+
+    auto xmlState = std::unique_ptr<juce::XmlElement>(juce::XmlDocument::parse(file));
+    if (xmlState == nullptr)
+        return false;
+
+    return restoreStateFromXml(*xmlState);
+}
+
+bool ViveAudioProcessor::deleteUserPreset(const juce::String& presetName)
+{
+    const auto file = getUserPresetDirectory().getChildFile(makePresetFileName(presetName))
+        .withFileExtension(Params::Branding::stateFileExtension);
+
+    return file.existsAsFile() ? file.deleteFile() : false;
+}
+
+//==============================================================================
 void ViveAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
-    copyXmlToBinary(*xml, destData);
+    if (xml != nullptr)
+    {
+        xml->setAttribute("pluginName", Params::Branding::productName);
+        xml->setAttribute("formatVersion", 1);
+        copyXmlToBinary(*xml, destData);
+    }
 }
 
 void ViveAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState != nullptr)
-        if (xmlState->hasTagName(apvts.state.getType()))
-            apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        restoreStateFromXml(*xmlState);
 }
 
 //==============================================================================

@@ -26,11 +26,16 @@ class SatModeSelector : public juce::Component
 public:
     std::function<void(int)> onModeChanged;
 
-    SatModeSelector()  = default;
+    SatModeSelector() = default;
     ~SatModeSelector() = default;
 
-    void setActiveMode(int modeIndex) { activeMode = modeIndex; repaint(); }
-    int  getActiveMode() const        { return activeMode; }
+    void setActiveMode(int modeIndex)
+    {
+        activeMode = juce::jlimit(0, numModes - 1, modeIndex);
+        repaint();
+    }
+
+    int getActiveMode() const { return activeMode; }
 
     void paint(juce::Graphics& g) override
     {
@@ -42,14 +47,14 @@ public:
 
         g.setFont(juce::Font(juce::FontOptions()
             .withName(juce::Font::getDefaultMonospacedFontName())
-            .withHeight(8.0f)
+            .withHeight(10.5f)
             .withStyle("Bold")));
 
         for (int i = 0; i < numModes; ++i)
         {
             const int col = i % 3;
             const int row = i / 3;
-            const bool active = (i == activeMode + 1); // mode -1 = NONE = index 0
+            const bool active = (i == activeMode);
 
             const juce::Rectangle<float> cell(
                 b.getX() + col * cellW + pad,
@@ -72,7 +77,7 @@ public:
                 g.drawRoundedRectangle(cell.reduced(0.5f), r, 0.5f);
             }
 
-            g.setColour(active ? EditorPalette::cream : EditorPalette::cream.withAlpha(0.36f));
+            g.setColour(active ? EditorPalette::cream : EditorPalette::cream.withAlpha(0.60f));
             g.drawText(modeLabels[i], cell.toNearestInt(), juce::Justification::centred);
         }
     }
@@ -84,22 +89,21 @@ public:
         const int col = juce::jlimit(0, 2, (int)(e.position.x / cellW));
         const int row = juce::jlimit(0, 1, (int)(e.position.y / cellH));
         const int idx = row * 3 + col;
-        const int newMode = idx - 1;
 
-        if (newMode == activeMode)
+        if (idx == activeMode)
             return;
 
-        activeMode = newMode;
+        activeMode = idx;
         repaint();
 
         if (onModeChanged)
-            onModeChanged(newMode);
+            onModeChanged(idx);
     }
 
 private:
     static constexpr int numModes = 6;
-    const char* modeLabels[numModes] = { "NONE", "CLEAN", "TUBE", "TAPE", "SOLID", "ASYM" };
-    int activeMode = -1;
+    const char* modeLabels[numModes] = { "OFF", "CLEAN", "TUBE", "TAPE", "SOLID", "ASYM" };
+    int activeMode = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SatModeSelector)
 };
@@ -117,7 +121,6 @@ public:
 
 private:
     void timerCallback() override;
-    void applyGenrePreset(int idx);
     void configureHeader();
     void configureSaturationSection();
     void configureKnob(juce::Slider& slider,
@@ -127,6 +130,14 @@ private:
                        const char* sliderName,
                        const juce::String& suffix);
     void syncSatModeSelector();
+    void rebuildBackgroundCache();
+    void updatePresetStatus(const juce::String& presetName, bool isUserPreset);
+    void showPresetMenu();
+    void handlePresetMenuResult(int result);
+    void saveCurrentAsUserPreset();
+    void deleteCurrentUserPreset();
+    void loadFactoryPreset(int presetIndex);
+    void loadUserPreset(const juce::String& presetName);
 
     ViveAudioProcessor& audioProcessor;
     CustomLookAndFeel customLookAndFeel;
@@ -142,6 +153,8 @@ private:
 
     juce::Label titleLabel;
     juce::Label subtitleLabel;
+    juce::Label presetStatusLabel;
+    juce::TextButton presetButton;
 
     juce::Label satSectionLabel;
     SatModeSelector satSelector;
@@ -158,6 +171,11 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
         inputGainAttachment, driveAttachment, ceilingAttachment,
         mixAttachment, outputGainAttachment;
+
+    juce::Image backgroundCache;
+    bool backgroundCacheDirty = true;
+    juce::String activePresetName = Params::Branding::nonePresetLabel;
+    bool activePresetIsUser = false;
 
     float headerCeilingDb = 0.0f;
     float pulsePhase      = 0.0f;

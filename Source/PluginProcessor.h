@@ -50,11 +50,19 @@ public:
     void setVisualizer(VisualizerComponent* newVisualizer) { visualizer = newVisualizer; }
     VisualizerComponent& getVisualizer() { jassert(visualizer != nullptr); return *visualizer; }
 
+    juce::StringArray getFactoryPresetNames() const;
+    juce::StringArray getUserPresetNames() const;
+    bool loadFactoryPreset(int presetIndex);
+    bool saveUserPreset(const juce::String& presetName);
+    bool loadUserPreset(const juce::String& presetName);
+    bool deleteUserPreset(const juce::String& presetName);
+    juce::File getUserPresetDirectory() const;
+
 private:
     juce::AudioProcessorValueTreeState apvts;
     VisualizerComponent*               visualizer = nullptr;
     int                                preparedBlockSize = 0;
-    
+
     juce::dsp::Oversampling<float> oversampler{
         2,
         2,   // 2^2 = 4x
@@ -71,18 +79,27 @@ private:
     juce::SmoothedValue<float> mixSmoother;
     juce::SmoothedValue<float> outputGainSmoother;
 
-    // ── Cached parameter pointer ──────────────────────────────────────────
+    // ── Cached parameter access ────────────────────────────────────────────
+    std::atomic<float>* inputGainParam = nullptr;
+    std::atomic<float>* driveParam = nullptr;
+    std::atomic<float>* ceilingParam = nullptr;
+    std::atomic<float>* mixParam = nullptr;
+    std::atomic<float>* outputGainParam = nullptr;
     juce::AudioParameterChoice* satModeParam = nullptr;
+    juce::AudioParameterChoice* genreParam = nullptr;
 
     // ── Working buffers ───────────────────────────────────────────────────
     juce::AudioBuffer<float> dryBuffer;
-    juce::AudioBuffer<float> inputMeterBuffer;
 
     // ── Per-block ceiling snapshot ────────────────────────────────────────
     std::vector<float> ceilingPerSample;
     std::vector<float> drivePerSample;
 
     void processBlockChunk(juce::AudioBuffer<float>& buffer);
+    void cacheParameterPointers();
+    void applyPresetValues(const Params::FactoryPreset& preset);
+    bool restoreStateFromXml(const juce::XmlElement& xmlState);
+    void updateGenreParameter(int presetIndex);
 
     struct SaturationResult
     {
@@ -92,7 +109,7 @@ private:
 
     static SaturationResult shapeSaturation(float sample, float driveAmount, int satMode, float ceiling) noexcept;
     static float clampToCeiling(float sample, float ceiling) noexcept;
-    
+
     // INTERVIEW NOTE: "FSC" = Foldback/Full-Scale Clipper — a knee-based soft clipper.
     // Design goals worth being able to explain out loud:
     //   1. Below the knee, signal passes untouched (transparent, no coloration on quiet material).

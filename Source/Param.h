@@ -1,10 +1,30 @@
 // Params.h
+
 #pragma once
 
 #include <JuceHeader.h>
 
 namespace Params
 {
+    // ============================================================================
+    // BRANDING
+    // ============================================================================
+
+    namespace Branding
+    {
+        inline const juce::String productName        = "Vive Saturator";
+        inline const juce::String shortName          = "Vive";
+        inline const juce::String descriptor         = "Adaptive harmonic shaper";
+        inline const juce::String presetButton       = "Presets";
+        inline const juce::String factoryPresetTitle = "Factory Presets";
+        inline const juce::String userPresetTitle    = "User Presets";
+        inline const juce::String savePresetLabel    = "Save User Preset...";
+        inline const juce::String deletePresetLabel  = "Delete User Preset";
+        inline const juce::String nonePresetLabel    = "None";
+        inline const juce::String offLabel           = "Off";
+        inline const juce::String stateFileExtension = "vivepreset";
+    }
+
     // ============================================================================
     // SATURATION MODES
     // ============================================================================
@@ -19,10 +39,10 @@ namespace Params
     };
 
     // ============================================================================
-    // GENRE PRESET STRUCT
+    // FACTORY PRESET STRUCT
     // ============================================================================
 
-    struct GenrePreset
+    struct FactoryPreset
     {
         const char*    name;
         float          inputGainDb;
@@ -34,23 +54,25 @@ namespace Params
     };
 
     // ============================================================================
-    // GENRE PRESET DEFINITIONS
+    // FACTORY PRESET DEFINITIONS
     // ============================================================================
 
-    inline constexpr GenrePreset genrePresets[] =
+    inline constexpr FactoryPreset factoryPresets[] =
     {
-        //            name             inGain  drive  ceil   outGain  mix     satMode
-        { "-- Select Genre --", 0.0f,   0.0f, 0.0f,  0.0f,  100.0f, SaturationMode::Clean       },
-        { "Hip-Hop",            2.0f,  65.0f, -0.3f,  0.0f,  100.0f, SaturationMode::Tube        },
-        { "EDM",                3.0f,  50.0f, -0.3f,  0.0f,  100.0f, SaturationMode::SolidState  },
-        { "Rock/Metal",         1.0f,  80.0f, -0.5f,  0.0f,  100.0f, SaturationMode::Tape        },
-        { "Pop/R&B",            0.0f,  30.0f, -0.3f, -0.5f,  100.0f, SaturationMode::Clean       },
-        { "Jazz/Acoustic",      0.0f,  10.0f, -1.0f, -1.0f,   80.0f, SaturationMode::Clean       },
-        { "Lo-Fi",              2.0f,  90.0f, -0.3f,  0.0f,  100.0f, SaturationMode::Asymmetric  },
-        { "Voice/Podcast",      0.0f,  40.0f, -1.0f, -1.0f,  100.0f, SaturationMode::Clean       },
+        //            name               inGain  drive  ceil   outGain  mix     satMode
+        { "Reset to Default",      0.0f,   0.0f, 0.0f,  0.0f,  100.0f, SaturationMode::Clean       },
+        { "Mix Bus Gentle",         2.0f,  32.0f, -0.3f,  0.0f,  100.0f, SaturationMode::Clean       },
+        { "Drum Edge",              1.0f,  62.0f, -0.5f,  0.0f,  100.0f, SaturationMode::Tube        },
+        { "Master Glue",            0.0f,  24.0f, -0.3f, -0.5f,  100.0f, SaturationMode::SolidState  },
+        { "Aggressive Tape",        1.0f,  78.0f, -0.5f,  0.0f,  100.0f, SaturationMode::Tape        },
+        { "Lo-Fi Crush",            2.0f,  90.0f, -0.3f,  0.0f,  100.0f, SaturationMode::Asymmetric  },
+        { "Vocal Warmth",           0.0f,  18.0f, -1.0f, -1.0f,   80.0f, SaturationMode::Clean       },
+        { "Podcast Leveler",        0.0f,  40.0f, -1.0f, -1.0f,  100.0f, SaturationMode::Clean       },
     };
 
-    inline constexpr int numGenrePresets = static_cast<int>(std::size(genrePresets));
+    inline constexpr int numFactoryPresets = static_cast<int>(std::size(factoryPresets));
+    inline constexpr auto& genrePresets = factoryPresets;
+    inline constexpr int numGenrePresets = numFactoryPresets;
 
     // ============================================================================
     // PARAMETER IDs
@@ -115,8 +137,8 @@ namespace Params
         inline const juce::String OUTPUT_GAIN = "Output Gain";
         inline const juce::String DRIVE       = "Drive";
         inline const juce::String MIX         = "Mix";
-        inline const juce::String GENRE       = "Genre";
-        inline const juce::String SAT_MODE    = "Saturation Mode";
+        inline const juce::String GENRE       = "Factory Preset";
+        inline const juce::String SAT_MODE    = "Harmonic Model";
     }
 
     // ============================================================================
@@ -194,8 +216,8 @@ namespace Params
 
         // Genre
         juce::StringArray genreNames;
-        for (int i = 0; i < numGenrePresets; ++i)
-            genreNames.add(genrePresets[i].name);
+        for (int i = 0; i < numFactoryPresets; ++i)
+            genreNames.add(factoryPresets[i].name);
 
         layout.add(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID(IDs::GENRE_ID, 1),
@@ -207,7 +229,7 @@ namespace Params
         layout.add(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID(IDs::SAT_MODE_ID, 1),
             Names::SAT_MODE,
-            juce::StringArray { "Clean", "Tube", "Tape", "Solid", "Asym" },
+            juce::StringArray { "Off", "Clean", "Tube", "Tape", "Solid", "Asym" },
             static_cast<int>(SaturationMode::Clean)));
 
         return layout;

@@ -22,109 +22,93 @@ namespace Fonts
             .withHeight(height)
             .withStyle(bold ? "Bold" : "Regular"));
     }
+
+    static const juce::String& roundedName()
+    {
+        static const juce::String name = []()
+        {
+            const auto available = juce::Font::findAllTypefaceNames();
+            if (available.contains("Arial Rounded MT Bold")) return juce::String("Arial Rounded MT Bold");
+            if (available.contains("Avenir Next"))           return juce::String("Avenir Next");
+            return juce::String(juce::Font::getDefaultSansSerifFontName());
+        }();
+        return name;
+    }
+
+    static juce::Font rounded(float height, bool bold = true)
+    {
+        return juce::Font(juce::FontOptions()
+            .withName(roundedName())
+            .withHeight(height)
+            .withStyle(bold ? "Bold" : "Regular"));
+    }
 }
 
 namespace
 {
     struct EditorLayout
     {
-        juce::Rectangle<float> outerFrame;
         juce::Rectangle<float> headerBand;
         juce::Rectangle<float> visualizerFrame;
         juce::Rectangle<float> controlStrip;
         juce::Rectangle<float> inputCard;
+        juce::Rectangle<float> mainCard;
         juce::Rectangle<float> outputCard;
-        juce::Rectangle<float> satCard;
+        juce::Rectangle<float> modeStrip;
     };
 
     static EditorLayout makeEditorLayout(float W, float H)
     {
-        constexpr float outerMargin = 8.0f;
-        constexpr float cardGap = 12.0f;
-        constexpr float cardInset = 10.0f;
+        constexpr float side = 32.0f;
+        constexpr float headerH = 74.0f;
+        constexpr float controlsH = 286.0f;
+        constexpr float gap = 44.0f;
 
         EditorLayout layout;
-        layout.outerFrame = { outerMargin, outerMargin, W - outerMargin * 2.0f, H - outerMargin * 2.0f };
-        layout.headerBand = { 0.0f, 0.0f, W, 58.0f };
-        layout.controlStrip = { 0.0f, H - 126.0f, W, 126.0f };
-
-        const float visualizerX = 20.0f;
-        const float visualizerY = 58.0f + 14.0f;
-        const float visualizerW = W - visualizerX * 2.0f;
-        const float visualizerH = layout.controlStrip.getY() - visualizerY - 14.0f;
-        layout.visualizerFrame = { visualizerX - 4.0f, visualizerY - 4.0f,
-                                   visualizerW + 8.0f, visualizerH + 8.0f };
-
-        const float satCardW = 176.0f;
-        const float satCardX = W - visualizerX - satCardW;
-        const float cardY = layout.controlStrip.getY() + cardInset;
-        const float cardH = layout.controlStrip.getHeight() - cardInset * 2.0f;
-        const float knobAreaX = visualizerX;
-        const float knobAreaW = satCardX - cardGap - knobAreaX;
-        const float leftCardW = knobAreaW * 0.42f;
-        const float rightCardW = knobAreaW - leftCardW - cardGap;
-
-        layout.inputCard = { knobAreaX, cardY, leftCardW, cardH };
-        layout.outputCard = { knobAreaX + leftCardW + cardGap, cardY, rightCardW, cardH };
-        layout.satCard = { satCardX, cardY, satCardW, cardH };
+        layout.headerBand = { 0.0f, 0.0f, W, headerH };
+        layout.controlStrip = { side, H - controlsH - 26.0f, W - side * 2.0f, controlsH };
+        const float visualizerY = headerH + 16.0f;
+        const float visualizerBottom = layout.controlStrip.getY() - gap;
+        layout.visualizerFrame = { side, visualizerY, W - side * 2.0f,
+                                   juce::jmax(150.0f, visualizerBottom - visualizerY) };
+        const float sideW = layout.controlStrip.getWidth() * 0.255f;
+        const float overlap = 16.0f;
+        const float mainW = layout.controlStrip.getWidth() - sideW * 2.0f + overlap * 2.0f;
+        layout.inputCard = { layout.controlStrip.getX(), layout.controlStrip.getY(), sideW, controlsH };
+        layout.mainCard = { layout.inputCard.getRight() - overlap, layout.controlStrip.getY(), mainW, controlsH };
+        layout.outputCard = { layout.mainCard.getRight() - overlap, layout.controlStrip.getY(), sideW, controlsH };
+        layout.modeStrip = { layout.mainCard.getX() + 18.0f, layout.controlStrip.getBottom() - 48.0f,
+                             layout.mainCard.getWidth() - 36.0f, 34.0f };
         return layout;
     }
 
-    static void drawFloatingCard(juce::Graphics& g,
-                                 const juce::Rectangle<float>& rect,
-                                 float radius,
-                                 juce::Colour fill,
-                                 juce::Colour border,
-                                 juce::Colour highlight,
-                                 float shadowAlpha = 1.0f)
-    {
-        if (rect.isEmpty())
-            return;
 
-        const auto shadowRect = rect.translated(0.0f, 8.0f).expanded(2.0f, 2.0f);
-        g.setColour(juce::Colours::black.withAlpha(0.32f * shadowAlpha));
-        g.fillRoundedRectangle(shadowRect, radius + 2.0f);
-
-        g.setColour(juce::Colours::black.withAlpha(0.16f * shadowAlpha));
-        g.fillRoundedRectangle(rect.translated(0.0f, 3.0f).expanded(1.0f, 1.0f), radius + 1.0f);
-
-        g.setColour(fill);
-        g.fillRoundedRectangle(rect, radius);
-
-        juce::ColourGradient glow(highlight.withAlpha(0.15f), rect.getCentreX(), rect.getY(),
-                                  juce::Colours::transparentBlack, rect.getCentreX(), rect.getBottom(), false);
-        g.setGradientFill(glow);
-        g.fillRoundedRectangle(rect.reduced(1.5f), radius - 1.0f);
-
-        g.setColour(border);
-        g.drawRoundedRectangle(rect.reduced(0.5f), radius, 1.0f);
-
-        g.setColour(highlight.withAlpha(0.22f));
-        g.drawRoundedRectangle(rect.reduced(2.0f), radius - 1.5f, 0.8f);
-    }
 }
 
 //==============================================================================
 void ViveAudioProcessorEditor::configureHeader()
 {
-    titleLabel.setText(Params::Branding::productName, juce::dontSendNotification);
-    titleLabel.setFont(Fonts::mono(24.0f, true));
+    titleLabel.setText("VIVE", juce::dontSendNotification);
+    titleLabel.setFont(Fonts::rounded(30.0f));
     titleLabel.setJustificationType(juce::Justification::centredLeft);
-    titleLabel.setColour(juce::Label::textColourId, EditorPalette::textPrimary());
+    titleLabel.setColour(juce::Label::textColourId, juce::Colour(0xff342337));
     addAndMakeVisible(titleLabel);
 
     subtitleLabel.setText(Params::Branding::descriptor.toUpperCase(), juce::dontSendNotification);
-    subtitleLabel.setFont(Fonts::mono(10.0f, true));
+    subtitleLabel.setFont(Fonts::rounded(10.0f));
     subtitleLabel.setJustificationType(juce::Justification::centredLeft);
-    subtitleLabel.setColour(juce::Label::textColourId, EditorPalette::textSecondary());
+    subtitleLabel.setColour(juce::Label::textColourId, juce::Colour(0xff867381));
     addAndMakeVisible(subtitleLabel);
 
-    presetStatusLabel.setFont(Fonts::mono(8.5f, true));
+    presetStatusLabel.setFont(Fonts::rounded(9.5f));
     presetStatusLabel.setJustificationType(juce::Justification::centredLeft);
-    presetStatusLabel.setColour(juce::Label::textColourId, EditorPalette::textSecondary());
+    presetStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xff71576a));
     addAndMakeVisible(presetStatusLabel);
 
     presetButton.setButtonText(Params::Branding::presetButton.toUpperCase());
+    presetButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xffe8c6d5));
+    presetButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff43223d));
+    presetButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff43223d));
     presetButton.onClick = [this]
     {
         showPresetMenu();
@@ -134,9 +118,9 @@ void ViveAudioProcessorEditor::configureHeader()
 
 void ViveAudioProcessorEditor::configureSaturationSection()
 {
-    satSectionLabel.setText(Params::Names::SAT_MODE.toUpperCase(), juce::dontSendNotification);
-    satSectionLabel.setFont(Fonts::mono(10.0f, true));
-    satSectionLabel.setColour(juce::Label::textColourId, EditorPalette::textPrimary());
+    satSectionLabel.setText("HARMONIC CHARACTER", juce::dontSendNotification);
+    satSectionLabel.setFont(Fonts::rounded(9.5f));
+    satSectionLabel.setColour(juce::Label::textColourId, juce::Colour(0xff573047));
     satSectionLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(satSectionLabel);
 
@@ -175,15 +159,15 @@ void ViveAudioProcessorEditor::configureKnob(juce::Slider& slider,
     addAndMakeVisible(slider);
 
     nameLabel.setText(name, juce::dontSendNotification);
-    nameLabel.setFont(Fonts::mono(9.5f, true));
+    nameLabel.setFont(Fonts::rounded(10.5f));
     nameLabel.setJustificationType(juce::Justification::centred);
-    nameLabel.setColour(juce::Label::textColourId, EditorPalette::textPrimary());
+    nameLabel.setColour(juce::Label::textColourId, juce::Colour(0xff4b2d45));
     addAndMakeVisible(nameLabel);
 
     valueLabel.setText("-", juce::dontSendNotification);
-    valueLabel.setFont(Fonts::mono(11.5f, true));
+    valueLabel.setFont(Fonts::rounded(12.0f));
     valueLabel.setJustificationType(juce::Justification::centred);
-    valueLabel.setColour(juce::Label::textColourId, EditorPalette::textPrimary());
+    valueLabel.setColour(juce::Label::textColourId, juce::Colour(0xff39243a));
     addAndMakeVisible(valueLabel);
 
     auto updateValueLabel = [this, &slider, &valueLabel, suffix]()
@@ -231,126 +215,250 @@ void ViveAudioProcessorEditor::updatePresetStatus(const juce::String& presetName
 void ViveAudioProcessorEditor::rebuildBackgroundCache()
 {
     backgroundCacheDirty = false;
-
     const auto bounds = getLocalBounds();
-    if (bounds.isEmpty())
-    {
-        backgroundCache = {};
-        return;
-    }
+    if (bounds.isEmpty()) { backgroundCache = {}; return; }
 
     backgroundCache = juce::Image(juce::Image::ARGB, bounds.getWidth(), bounds.getHeight(), true);
     juce::Graphics g(backgroundCache);
-
-    const auto floatBounds = bounds.toFloat();
-    const float W = floatBounds.getWidth();
-    const float H = floatBounds.getHeight();
+    const float W = (float) bounds.getWidth();
+    const float H = (float) bounds.getHeight();
     const auto layout = makeEditorLayout(W, H);
 
-    g.setColour(juce::Colour(0xff08060a));
-    g.fillRoundedRectangle(floatBounds, 16.0f);
+    juce::ColourGradient paper(juce::Colour(0xfff7f3f5), 0.0f, 0.0f,
+                               juce::Colour(0xffe9e1e7), W, H, false);
+    g.setGradientFill(paper);
+    g.fillAll();
 
+    const auto readout = juce::Rectangle<float>(W - padX - 122.0f, 14.0f, 122.0f, 46.0f);
+    g.setColour(juce::Colour(0xffd7cad4));
+    g.fillRoundedRectangle(readout.translated(0.0f, 2.0f), 9.0f);
+    g.setColour(juce::Colour(0xfffaf6f8));
+    g.fillRoundedRectangle(readout, 9.0f);
+    g.setColour(juce::Colour(0xffd6c6d2));
+    g.drawRoundedRectangle(readout.reduced(0.5f), 9.0f, 1.0f);
+
+    // Raised graphite case with a deep side wall; the glass stays dark and inset.
+    const auto meterHousing = layout.visualizerFrame.expanded(5.0f);
+    g.setColour(juce::Colour(0x8806040a));
+    g.fillRoundedRectangle(meterHousing.translated(0.0f, 14.0f).expanded(4.0f, 2.0f), 21.0f);
+    g.setColour(juce::Colour(0xff09080d));
+    g.fillRoundedRectangle(meterHousing.translated(0.0f, 9.0f), 20.0f);
+    juce::ColourGradient housing(juce::Colour(0xff4d4852), meterHousing.getX(), meterHousing.getY(),
+                                 juce::Colour(0xff19171d), meterHousing.getX(), meterHousing.getBottom(), false);
+    g.setGradientFill(housing);
+    g.fillRoundedRectangle(meterHousing, 19.0f);
+    g.setColour(juce::Colour(0xff77717a).withAlpha(0.48f));
+    g.drawRoundedRectangle(meterHousing.reduced(0.7f), 18.3f, 1.0f);
+
+    g.setColour(juce::Colour(0xff0b0a10));
+    g.fillRoundedRectangle(layout.visualizerFrame, 14.0f);
+    g.setColour(juce::Colour(0xff756d78).withAlpha(0.42f));
+    g.drawRoundedRectangle(layout.visualizerFrame.reduced(0.6f), 13.5f, 1.0f);
+
+    // Small flush retainers make the glass read as a panel seated in a case.
+    auto drawCaseRivet = [&g](float cx, float cy)
     {
-        juce::ColourGradient bg(EditorPalette::dark2, W * 0.5f, H, EditorPalette::dark, W * 0.5f, 0.0f, true);
-        g.setGradientFill(bg);
-        g.fillRoundedRectangle(floatBounds.reduced(1.0f), 16.0f);
+        constexpr float r = 3.2f;
+        g.setColour(juce::Colour(0xff09080d));
+        g.fillEllipse(cx - r, cy - r + 1.3f, r * 2.0f, r * 2.0f);
+        juce::ColourGradient steel(juce::Colour(0xffc5bec6), cx - r, cy - r,
+                                   juce::Colour(0xff514c56), cx + r, cy + r, false);
+        g.setGradientFill(steel);
+        g.fillEllipse(cx - r, cy - r, r * 2.0f, r * 2.0f);
+        g.setColour(juce::Colour(0xff221f27));
+        g.drawEllipse(cx - r + 0.7f, cy - r + 0.7f, r * 1.6f, r * 1.6f, 0.65f);
+        g.setColour(juce::Colour(0xffeeeaf0).withAlpha(0.76f));
+        g.drawLine(cx - 1.5f, cy + 0.7f, cx + 1.5f, cy - 0.7f, 0.8f);
+    };
+    drawCaseRivet(layout.visualizerFrame.getX() + 4.0f, layout.visualizerFrame.getY() + 7.0f);
+    drawCaseRivet(layout.visualizerFrame.getRight() - 4.0f, layout.visualizerFrame.getY() + 7.0f);
+    drawCaseRivet(layout.visualizerFrame.getX() + 4.0f, layout.visualizerFrame.getBottom() - 7.0f);
+    drawCaseRivet(layout.visualizerFrame.getRight() - 4.0f, layout.visualizerFrame.getBottom() - 7.0f);
+
+    const auto input = layout.inputCard;
+    const auto output = layout.outputCard;
+    auto drawScrew = [&g](float cx, float cy, float r)
+    {
+        g.setColour(juce::Colour(0x880d0812));
+        g.fillEllipse(cx - r, cy - r + 2.0f, r * 2.0f, r * 2.0f);
+        g.setColour(juce::Colour(0xff4a354c));
+        g.fillEllipse(cx - r, cy - r, r * 2.0f, r * 2.0f);
+        juce::ColourGradient metal(juce::Colour(0xfffbffff), cx - r * 0.55f, cy - r * 0.7f,
+                                   juce::Colour(0xff716878), cx + r * 0.7f, cy + r * 0.8f, false);
+        g.setGradientFill(metal);
+        g.fillEllipse(cx - r * 0.78f, cy - r * 0.78f, r * 1.56f, r * 1.56f);
+        g.setColour(juce::Colour(0xff5a4d61));
+        g.drawEllipse(cx - r * 0.78f, cy - r * 0.78f, r * 1.56f, r * 1.56f, 0.8f);
+        g.setColour(juce::Colour(0xff493d4d));
+        g.drawLine(cx - r * 0.36f, cy + r * 0.28f, cx + r * 0.36f, cy - r * 0.28f, 1.2f);
+        g.setColour(juce::Colour(0xfffaffff).withAlpha(0.84f));
+        g.drawLine(cx - r * 0.32f, cy + r * 0.20f, cx + r * 0.30f, cy - r * 0.30f, 0.55f);
+    };
+
+    // Cool glass input wing, partially tucked under the center pedal.
+    g.setColour(juce::Colour(0xff45569c));
+    g.fillRoundedRectangle(input.translated(0.0f, 11.0f).expanded(2.0f, 0.0f), 20.0f);
+    juce::ColourGradient glass(juce::Colour(0xffa9ffff), input.getX(), input.getY(),
+                               juce::Colour(0xff6953c6), input.getRight(), input.getBottom(), false);
+    g.setGradientFill(glass);
+    g.fillRoundedRectangle(input, 18.0f);
+    g.setColour(juce::Colour(0xffe6ffff).withAlpha(0.96f));
+    g.drawRoundedRectangle(input.reduced(0.7f), 17.5f, 1.5f);
+    g.setColour(juce::Colour(0xff2c3779).withAlpha(0.68f));
+    g.drawRoundedRectangle(input.reduced(3.0f), 15.5f, 1.0f);
+    g.setColour(juce::Colour(0xfff5ffff).withAlpha(0.68f));
+    g.drawLine(input.getX() + 24.0f, input.getY() + 2.0f,
+               input.getRight() - 26.0f, input.getY() + 2.0f, 1.2f);
+    juce::Random bubbles(9041);
+    for (int i = 0; i < 32; ++i)
+    {
+        const float d = 12.0f + bubbles.nextFloat() * 23.0f;
+        const float x = input.getX() + 6.0f + bubbles.nextFloat() * (input.getWidth() - d - 12.0f);
+        const float y = input.getY() + 8.0f + bubbles.nextFloat() * (input.getHeight() - d - 16.0f);
+        g.setColour(juce::Colour(0x99302583));
+        g.fillEllipse(x + 1.5f, y + 3.0f, d, d);
+        juce::ColourGradient dome(juce::Colour(0xffeaffff), x + d * 0.28f, y + d * 0.20f,
+                                  (i % 2 == 0) ? juce::Colour(0xff29d4e7) : juce::Colour(0xff8f79f4),
+                                  x + d * 0.62f, y + d * 0.82f, true);
+        g.setGradientFill(dome);
+        g.fillEllipse(x, y, d, d);
+        g.setColour(juce::Colour(0xbaffffff));
+        g.drawEllipse(x + 0.6f, y + 0.6f, d - 1.2f, d - 1.2f, 1.1f);
+        g.setColour(juce::Colour(0xffffffff).withAlpha(0.9f));
+        g.fillEllipse(x + d * 0.20f, y + d * 0.16f, d * 0.30f, d * 0.14f);
     }
 
+    // Deep moss output wing with a small branching signal motif.
+    g.setColour(juce::Colour(0xff14291f));
+    g.fillRoundedRectangle(output.translated(0.0f, 11.0f).expanded(2.0f, 0.0f), 20.0f);
+    juce::ColourGradient moss(juce::Colour(0xff80a940), output.getX(), output.getY(),
+                              juce::Colour(0xff173a2b), output.getRight(), output.getBottom(), false);
+    g.setGradientFill(moss);
+    g.fillRoundedRectangle(output, 18.0f);
+    g.setColour(juce::Colour(0xffd2f29b).withAlpha(0.92f));
+    g.drawRoundedRectangle(output.reduced(0.7f), 17.5f, 1.5f);
+    g.setColour(juce::Colour(0xff26442d).withAlpha(0.9f));
+    g.drawRoundedRectangle(output.reduced(3.0f), 15.5f, 1.0f);
+    g.setColour(juce::Colour(0xffefffc2).withAlpha(0.70f));
+    g.drawLine(output.getX() + 24.0f, output.getY() + 2.0f,
+               output.getRight() - 26.0f, output.getY() + 2.0f, 1.2f);
+
+    juce::Random mossSpeckle(5183);
+    for (int i = 0; i < 150; ++i)
     {
-        juce::ColourGradient haze(EditorPalette::pink.withAlpha(0.08f), W * 0.08f, 0.0f,
-                                  juce::Colours::transparentBlack, W * 0.46f, H * 0.38f, false);
-        g.setGradientFill(haze);
-        g.fillRoundedRectangle(floatBounds.reduced(2.0f), 16.0f);
+        const float d = 3.5f + mossSpeckle.nextFloat() * 7.0f;
+        const float x = output.getX() + 6.0f + mossSpeckle.nextFloat() * (output.getWidth() - d - 12.0f);
+        const float y = output.getY() + 142.0f + mossSpeckle.nextFloat() * (94.0f - d);
+        g.setColour(juce::Colour(0xff10291e).withAlpha(0.72f));
+        g.fillEllipse(x + 1.0f, y + 2.0f, d, d);
+        juce::ColourGradient tuft(juce::Colour(0xffc4ed73), x + d * 0.25f, y + d * 0.12f,
+                                  juce::Colour(0xff578b37), x + d * 0.72f, y + d * 0.88f, true);
+        g.setGradientFill(tuft);
+        g.fillEllipse(x, y, d, d);
+        g.setColour(juce::Colour(0xfff0ffb2).withAlpha(0.78f));
+        g.fillEllipse(x + d * 0.23f, y + d * 0.16f, d * 0.30f, d * 0.17f);
     }
-
     {
-        juce::ColourGradient lowGlow(EditorPalette::blue.withAlpha(0.06f), W * 0.74f, H,
-                                     juce::Colours::transparentBlack, W * 0.42f, H * 0.45f, false);
-        g.setGradientFill(lowGlow);
-        g.fillRoundedRectangle(floatBounds.reduced(3.0f), 15.0f);
-    }
-
-    g.setColour(juce::Colour(0xff120c12));
-    g.fillRect(0.0f, 0.0f, W, 58.0f);
-    g.setColour(EditorPalette::cream.withAlpha(0.02f));
-    g.fillRect(0.0f, 0.0f, W, 58.0f);
-
-    {
-        const float spineX = layout.visualizerFrame.getCentreX();
-        g.setColour(EditorPalette::pink.withAlpha(0.08f));
-        g.fillRoundedRectangle(spineX - 2.0f, 18.0f, 4.0f, H - 40.0f, 2.0f);
-        g.setColour(EditorPalette::blue.withAlpha(0.06f));
-        g.fillRoundedRectangle(spineX + 6.0f, 28.0f, 2.0f, H - 64.0f, 1.0f);
-    }
-
-    {
-        const auto titleBlock = juce::Rectangle<float>(layout.headerBand.getX() + 16.0f, 10.0f, 214.0f, 40.0f);
-        drawFloatingCard(g, titleBlock, 12.0f,
-                         juce::Colour(0xff1a1119),
-                         juce::Colour(0xff312639),
-                         EditorPalette::pink.withAlpha(0.95f), 0.95f);
-
-        const float readX = W - static_cast<float>(padX) - 104.0f;
-        const auto ceilingCard = juce::Rectangle<float>(readX - 18.0f, 10.0f, 122.0f, 40.0f);
-        drawFloatingCard(g, ceilingCard, 12.0f,
-                         juce::Colour(0xff151015),
-                         juce::Colour(0xff2e2332),
-                         EditorPalette::blue.withAlpha(0.88f), 0.9f);
-    }
-
-    {
-        const auto vizBounds = layout.visualizerFrame;
-        drawFloatingCard(g, vizBounds, 16.0f,
-                         juce::Colour(0xff120d16),
-                         juce::Colour(0xff33273a),
-                         EditorPalette::pink.withAlpha(0.88f), 1.0f);
-
-        const auto inner = vizBounds.reduced(2.0f);
-        g.setColour(EditorPalette::cream.withAlpha(0.05f));
-        g.drawRoundedRectangle(inner.expanded(0.5f), 10.0f, 0.5f);
-
-        constexpr int gridCols = 10;
-        constexpr int gridRows = 5;
-        g.setColour(EditorPalette::blue.withAlpha(0.030f));
-        for (int col = 1; col < gridCols; ++col)
+        juce::Path branch;
+        branch.startNewSubPath(output.getX() + 20.0f, output.getY() + 247.0f);
+        branch.cubicTo(output.getX() + 42.0f, output.getY() + 210.0f,
+                       output.getX() + 54.0f, output.getY() + 193.0f,
+                       output.getX() + 91.0f, output.getY() + 171.0f);
+        branch.cubicTo(output.getX() + 118.0f, output.getY() + 155.0f,
+                       output.getX() + 130.0f, output.getY() + 162.0f,
+                       output.getX() + 152.0f, output.getY() + 146.0f);
+        g.setColour(juce::Colour(0xaa0b2618));
+        g.strokePath(branch, juce::PathStrokeType(5.0f, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+        g.setColour(juce::Colour(0xffd9ff87));
+        g.strokePath(branch, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+        for (const auto point : { juce::Point<float>(output.getX() + 91.0f, output.getY() + 171.0f),
+                                  juce::Point<float>(output.getX() + 152.0f, output.getY() + 146.0f) })
         {
-            const float gx = inner.getX() + inner.getWidth() * col / gridCols;
-            g.fillRect(gx, inner.getY(), 0.5f, inner.getHeight());
+            g.setColour(juce::Colour(0x66d9ff82));
+            g.fillEllipse(point.x - 5.0f, point.y - 5.0f, 10.0f, 10.0f);
+            g.setColour(juce::Colour(0xffeaffb5));
+            g.fillEllipse(point.x - 2.5f, point.y - 2.5f, 5.0f, 5.0f);
         }
-        for (int row = 1; row < gridRows; ++row)
-        {
-            const float gy = inner.getY() + inner.getHeight() * row / gridRows;
-            g.fillRect(inner.getX(), gy, inner.getWidth(), 0.5f);
-        }
-
-        g.setColour(EditorPalette::pink.withAlpha(0.08f));
-        g.fillRoundedRectangle(inner.getCentreX() - 26.0f, inner.getY() - 6.0f,
-                               52.0f, 6.0f, 3.0f);
     }
 
-    g.setColour(juce::Colour(0xff0d090d).withAlpha(0.68f));
-    g.fillRect(layout.controlStrip);
-    g.setColour(EditorPalette::cream.withAlpha(0.03f));
-    g.fillRect(layout.controlStrip.getX(), layout.controlStrip.getY(), layout.controlStrip.getWidth(), 0.5f);
+    const auto plate = layout.mainCard;
+    g.setColour(juce::Colour(0xff7e285e));
+    g.fillRoundedRectangle(plate.translated(0.0f, 12.0f).expanded(3.0f, 1.0f), 25.0f);
+    g.setColour(juce::Colour(0xfffbc2dc));
+    g.fillRoundedRectangle(plate.translated(0.0f, 5.0f), 23.0f);
 
-    drawFloatingCard(g, layout.inputCard, 12.0f,
-                     juce::Colour(0xff141015), juce::Colour(0xff2b2230), EditorPalette::blue.withAlpha(0.92f));
-    drawFloatingCard(g, layout.outputCard, 12.0f,
-                     juce::Colour(0xff150f16), juce::Colour(0xff312539), EditorPalette::pink.withAlpha(0.92f));
-    drawFloatingCard(g, layout.satCard, 12.0f,
-                     juce::Colour(0xff140d17), juce::Colour(0xff2d2232), EditorPalette::pink.withAlpha(0.84f));
+    // A scalloped, soft edge suggests the plush texture of the reference pedal.
+    juce::Random fibers(4019);
+    auto drawTuft = [&g, &fibers](float x, float y, int seed)
+    {
+        const float r = 3.0f + fibers.nextFloat() * 4.2f;
+        const float offsetX = (fibers.nextFloat() - 0.5f) * 5.0f;
+        const float offsetY = (fibers.nextFloat() - 0.5f) * 5.0f;
+        const juce::Colour shades[] = { juce::Colour(0xfff69ac2), juce::Colour(0xffed72aa),
+                                        juce::Colour(0xffffb0cf), juce::Colour(0xffd95591) };
+        g.setColour(shades[seed % 4]);
+        g.fillEllipse(x + offsetX - r, y + offsetY - r, r * 2.0f, r * 2.0f);
+        g.setColour(juce::Colour(0xffffd5e5).withAlpha(0.62f));
+        g.fillEllipse(x + offsetX - r * 0.46f, y + offsetY - r * 0.60f, r * 0.8f, r * 0.58f);
+    };
+    int tuftIndex = 0;
+    for (float x = plate.getX() + 19.0f; x < plate.getRight() - 18.0f; x += 4.5f)
+    {
+        drawTuft(x, plate.getY() + 1.0f, tuftIndex++);
+        drawTuft(x, plate.getBottom() - 1.0f, tuftIndex++);
+    }
+    for (float y = plate.getY() + 18.0f; y < plate.getBottom() - 17.0f; y += 4.5f)
+    {
+        drawTuft(plate.getX() + 1.0f, y, tuftIndex++);
+        drawTuft(plate.getRight() - 1.0f, y, tuftIndex++);
+    }
 
-    g.setColour(EditorPalette::blue.withAlpha(0.10f));
-    g.fillRect(layout.inputCard.getX() + 8.0f, layout.inputCard.getY() + 8.0f, 32.0f, 2.0f);
-    g.setColour(EditorPalette::pink.withAlpha(0.10f));
-    g.fillRect(layout.outputCard.getX() + 8.0f, layout.outputCard.getY() + 8.0f, 32.0f, 2.0f);
-    g.setColour(EditorPalette::pink.withAlpha(0.08f));
-    g.fillRect(layout.satCard.getX() + 8.0f, layout.satCard.getY() + 8.0f, 48.0f, 2.0f);
+    juce::ColourGradient enamel(juce::Colour(0xffffc5dc), plate.getX(), plate.getY(),
+                                juce::Colour(0xffdf438b), plate.getX(), plate.getBottom(), false);
+    g.setGradientFill(enamel);
+    g.fillRoundedRectangle(plate, 22.0f);
+    g.setColour(juce::Colour(0xffffe5ef).withAlpha(0.98f));
+    g.drawRoundedRectangle(plate.reduced(1.0f), 21.0f, 1.2f);
+    g.setColour(juce::Colour(0xffa4316f).withAlpha(0.56f));
+    g.drawRoundedRectangle(plate.reduced(3.2f), 18.8f, 1.0f);
+    g.setColour(juce::Colour(0xffffffff).withAlpha(0.55f));
+    g.drawLine(plate.getX() + 26.0f, plate.getY() + 3.0f,
+               plate.getRight() - 26.0f, plate.getY() + 3.0f, 1.2f);
+
+    // Fine, hand-spaced flecks give the plate a soft coated texture without competing with controls.
+    juce::Random flecks(7319);
+    const auto textureBounds = plate.reduced(9.0f, 8.0f);
+    for (int i = 0; i < 420; ++i)
+    {
+        const float x = textureBounds.getX() + flecks.nextFloat() * textureBounds.getWidth();
+        const float y = textureBounds.getY() + flecks.nextFloat() * textureBounds.getHeight();
+        if (! plate.reduced(4.0f).contains(x, y) || y > layout.modeStrip.getY() - 4.0f)
+            continue;
+        g.setColour((i % 3 == 0) ? juce::Colour(0x55fff3fb) : juce::Colour(0x35a92a70));
+        const float d = 0.9f + flecks.nextFloat() * 1.8f;
+        g.fillEllipse(x, y, d, d);
+    }
+
+    g.setColour(juce::Colour(0xffffd6e7).withAlpha(0.96f));
+    g.drawRoundedRectangle(plate.reduced(0.5f), 21.0f, 1.5f);
+    g.setColour(juce::Colour(0xffa63370).withAlpha(0.56f));
+    g.drawLine(plate.getX() + 20.0f, layout.modeStrip.getY() - 12.0f,
+               plate.getRight() - 20.0f, layout.modeStrip.getY() - 12.0f, 1.0f);
+
+    // Recessed metal fasteners catch the same top-left studio light across all three shells.
+    drawScrew(input.getX() + 13.0f, input.getY() + 14.0f, 5.0f);
+    drawScrew(input.getX() + 13.0f, input.getBottom() - 14.0f, 5.0f);
+    drawScrew(output.getRight() - 13.0f, output.getY() + 14.0f, 5.0f);
+    drawScrew(output.getRight() - 13.0f, output.getBottom() - 14.0f, 5.0f);
+    for (float x : { plate.getX() + 15.0f, plate.getRight() - 15.0f })
+        for (float y : { plate.getY() + 15.0f, plate.getBottom() - 15.0f })
+            drawScrew(x, y, 5.5f);
 
     g.setFont(Fonts::mono(8.0f));
-    g.setColour(EditorPalette::textGhost());
-    g.drawText(JucePlugin_VersionString,
-               bounds.reduced(padX).translated(0, -7),
+    g.setColour(juce::Colour(0xff877b88));
+    g.drawText(JucePlugin_VersionString, bounds.reduced(padX).translated(0, -4),
                juce::Justification::bottomRight);
 }
 
@@ -493,8 +601,8 @@ ViveAudioProcessorEditor::ViveAudioProcessorEditor(ViveAudioProcessor& p)
     setLookAndFeel(&customLookAndFeel);
     audioProcessor.setVisualizer(&visualizer);
 
-    boundsConstrainer.setMinimumSize(600, 380);
-    boundsConstrainer.setMaximumSize(1400, 900);
+    boundsConstrainer.setMinimumSize(720, 560);
+    boundsConstrainer.setMaximumSize(1400, 1000);
     boundsConstrainer.setFixedAspectRatio(0.0);
     setResizable(true, true);
     setConstrainer(&boundsConstrainer);
@@ -537,7 +645,7 @@ ViveAudioProcessorEditor::ViveAudioProcessorEditor(ViveAudioProcessor& p)
     isRestoringState = false;
     syncSatModeSelector();
     startTimerHz(30);
-    setSize(860, 500);
+    setSize(860, 680);
 }
 
 ViveAudioProcessorEditor::~ViveAudioProcessorEditor()
@@ -555,10 +663,6 @@ void ViveAudioProcessorEditor::timerCallback()
 
     syncSatModeSelector();
 
-    pulsePhase += 0.04f;
-    if (pulsePhase > juce::MathConstants<float>::twoPi)
-        pulsePhase -= juce::MathConstants<float>::twoPi;
-
     repaint();
 }
 
@@ -570,24 +674,41 @@ void ViveAudioProcessorEditor::paint(juce::Graphics& g)
 
     g.drawImageAt(backgroundCache, 0, 0);
 
-    namespace P = EditorPalette;
     const auto bounds = getLocalBounds().toFloat();
     const float W = bounds.getWidth();
-    const float H = bounds.getHeight();
-
     const float readX = W - static_cast<float>(padX) - 104.0f;
-    const auto ceilingCard = juce::Rectangle<float>(readX - 18.0f, 10.0f, 122.0f, 40.0f);
+    const auto ceilingCard = juce::Rectangle<float>(readX - 18.0f, 14.0f, 122.0f, 46.0f);
 
-    g.setFont(Fonts::mono(7.5f, true));
-    g.setColour(P::textTertiary());
-    g.drawText("CEILING", ceilingCard.toNearestInt().reduced(10).withHeight(11),
-               juce::Justification::centredRight);
+    g.setFont(Fonts::rounded(8.5f));
+    g.setColour(juce::Colour(0xff9e8295));
+    g.drawText("CEILING", (int)ceilingCard.getX() + 11, (int)ceilingCard.getY() + 5,
+               (int)ceilingCard.getWidth() - 22, 10,
+               juce::Justification::centredLeft);
 
-    g.setFont(Fonts::mono(18.0f));
-    g.setColour(P::textPrimary());
+    g.setFont(Fonts::rounded(17.0f));
+    g.setColour(juce::Colour(0xff382237));
     g.drawText(juce::String(headerCeilingDb, 1) + " dB",
-               ceilingCard.toNearestInt().reduced(10).withTop(18),
-               juce::Justification::centredRight);
+               (int)ceilingCard.getX() + 11, (int)ceilingCard.getY() + 21,
+               (int)ceilingCard.getWidth() - 22, 20,
+               juce::Justification::centredLeft);
+
+    const auto layout = makeEditorLayout(W, bounds.getHeight());
+    const float wordmarkY = layout.mainCard.getY() + 151.0f;
+    const float center = layout.mainCard.getCentreX();
+    const float wingSpan = layout.mainCard.getWidth();
+    g.setFont(Fonts::rounded(27.0f));
+    g.setColour(juce::Colour(0xff612345).withAlpha(0.82f));
+    g.drawText("SATURATOR", (int)layout.mainCard.getX(), (int)wordmarkY,
+               (int)layout.mainCard.getWidth(), 34,
+               juce::Justification::centred);
+
+    const float ruleY = wordmarkY + 20.0f;
+    g.setColour(juce::Colour(0xffb63876).withAlpha(0.56f));
+    g.drawLine(center - wingSpan * 0.49f, ruleY, center - wingSpan * 0.25f, ruleY, 1.2f);
+    g.drawLine(center + wingSpan * 0.25f, ruleY, center + wingSpan * 0.49f, ruleY, 1.2f);
+    g.setColour(juce::Colour(0xffffe6f0));
+    g.fillEllipse(center - wingSpan * 0.50f + 6.0f, ruleY - 2.0f, 4.0f, 4.0f);
+    g.fillEllipse(center + wingSpan * 0.50f - 10.0f, ruleY - 2.0f, 4.0f, 4.0f);
 }
 
 //==============================================================================
@@ -595,30 +716,24 @@ void ViveAudioProcessorEditor::resized()
 {
     const auto layout = makeEditorLayout((float)getWidth(), (float)getHeight());
 
-    titleLabel.setBounds((int)layout.headerBand.getX() + 28, 12, 190, 24);
-    subtitleLabel.setBounds((int)layout.headerBand.getX() + 28, 34, 230, 12);
+    titleLabel.setBounds(padX, 10, 240, 34);
+    subtitleLabel.setBounds(padX + 2, 43, 280, 14);
 
-    const int presetButtonW = 86;
-    const int presetStatusW = 180;
+    const int presetButtonW = 94;
+    const int presetStatusW = 165;
     const int ceilingCardW = 122;
     const int ceilingCardX = getWidth() - padX - ceilingCardW;
     const int presetButtonX = ceilingCardX - 12 - presetButtonW;
-    const int presetStatusX = juce::jmax((int)layout.headerBand.getX() + 240,
-                                          presetButtonX - presetStatusW - 10);
+    const int presetStatusX = presetButtonX - presetStatusW - 10;
 
-    presetStatusLabel.setBounds(presetStatusX, 18, presetStatusW, 16);
-    presetButton.setBounds(presetButtonX, 16, presetButtonW, 18);
+    presetStatusLabel.setBounds(presetStatusX, 30, presetStatusW, 16);
+    presetButton.setBounds(presetButtonX, 25, presetButtonW, 28);
 
-    visualizer.setBounds(layout.visualizerFrame.reduced(4.0f).toNearestInt());
+    visualizer.setBounds(layout.visualizerFrame.reduced(8.0f, 16.0f).toNearestInt());
 
-    satSectionLabel.setBounds((int)layout.satCard.getX() + 12,
-                              (int)layout.satCard.getY() + 10,
-                              (int)layout.satCard.getWidth() - 24,
-                              14);
-    satSelector.setBounds((int)layout.satCard.getX() + 10,
-                          (int)layout.satCard.getY() + 28,
-                          (int)layout.satCard.getWidth() - 20,
-                          (int)layout.satCard.getHeight() - 38);
+    satSectionLabel.setBounds((int)layout.mainCard.getX() + 22,
+                              (int)layout.modeStrip.getY() - 18, 190, 12);
+    satSelector.setBounds(layout.modeStrip.toNearestInt());
 
     auto placeKnob = [] (juce::Slider& slider,
                          juce::Label& nameLbl,
@@ -627,31 +742,30 @@ void ViveAudioProcessorEditor::resized()
                          int index,
                          int count)
     {
-        const float insetX = 10.0f;
+        const float insetX = 24.0f;
         const float usableW = card.getWidth() - insetX * 2.0f;
         const float slotW = usableW / static_cast<float>(count);
         const float centerX = card.getX() + insetX + slotW * (static_cast<float>(index) + 0.5f);
-        const float knobSize = juce::jlimit(42.0f, 56.0f, card.getHeight() - 42.0f);
-        const float blockH = 12.0f + knobSize + 16.0f;
-        const float blockY = card.getY() + (card.getHeight() - blockH) * 0.5f + 3.0f;
+        const float knobSize = juce::jlimit(58.0f, 76.0f, card.getHeight() - 174.0f);
+        const float blockY = card.getY() + 26.0f;
         const float labelW = slotW - 8.0f;
         const float labelX = centerX - labelW * 0.5f;
 
         nameLbl.setBounds((int)std::round(labelX), (int)std::round(blockY),
                           (int)std::round(labelW), 13);
         slider.setBounds((int)std::round(centerX - knobSize * 0.5f),
-                         (int)std::round(blockY + 12.0f),
+                         (int)std::round(blockY + 15.0f),
                          (int)std::round(knobSize),
                          (int)std::round(knobSize));
-        valueLbl.setBounds((int)std::round(labelX), (int)std::round(blockY + 12.0f + knobSize),
-                           (int)std::round(labelW), 18);
+        valueLbl.setBounds((int)std::round(labelX), (int)std::round(blockY + 15.0f + knobSize),
+                           (int)std::round(labelW), 20);
     };
 
-    placeKnob(inputGainSlider,  inputGainLabel,  inputGainValue,  layout.inputCard,  0, 2);
-    placeKnob(driveSlider,      driveLabel,      driveValue,      layout.inputCard,  1, 2);
-    placeKnob(ceilingSlider,    ceilingLabel,    ceilingValue,    layout.outputCard, 0, 3);
-    placeKnob(mixSlider,        mixLabel,        mixValue,        layout.outputCard, 1, 3);
-    placeKnob(outputGainSlider, outputGainLabel, outputGainValue, layout.outputCard, 2, 3);
+    placeKnob(inputGainSlider,  inputGainLabel,  inputGainValue,  layout.inputCard,  0, 1);
+    placeKnob(driveSlider,      driveLabel,      driveValue,      layout.mainCard,   0, 3);
+    placeKnob(ceilingSlider,    ceilingLabel,    ceilingValue,    layout.mainCard,   1, 3);
+    placeKnob(mixSlider,        mixLabel,        mixValue,        layout.mainCard,   2, 3);
+    placeKnob(outputGainSlider, outputGainLabel, outputGainValue, layout.outputCard, 0, 1);
 
     backgroundCacheDirty = true;
 }

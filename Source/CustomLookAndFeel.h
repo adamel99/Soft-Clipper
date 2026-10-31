@@ -12,6 +12,9 @@ public:
         float sliderPosProportional, float rotaryStartAngle,
         float rotaryEndAngle, juce::Slider&) override;
 
+    juce::Font getTextButtonFont(juce::TextButton&, int buttonHeight) override;
+    juce::Font getPopupMenuFont() override;
+
     void drawLabel(juce::Graphics&, juce::Label&) override;
 
     void drawComboBox(juce::Graphics&, int width, int height,

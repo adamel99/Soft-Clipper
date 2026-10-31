@@ -283,20 +283,20 @@ static inline float peakToNorm (float linearPeak) noexcept
 //==============================================================================
 namespace VizPalette
 {
-    static const juce::Colour dark    { 0xff110b11 };
-    static const juce::Colour cream   { 0xfff9dec9 };
-    static const juce::Colour blue    { 0xff99b2dd };
-    static const juce::Colour pink    { 0xffde369d };
+    static const juce::Colour dark    { 0xff090b12 };
+    static const juce::Colour cream   { 0xfff5eaf4 };
+    static const juce::Colour blue    { 0xff79e9f3 };
+    static const juce::Colour pink    { 0xffff62b4 };
 
     static const juce::Colour inputWave  = blue;
     static const juce::Colour outputWave = pink;
 
-    static const juce::Colour textRuler    { 0xff7a8aaa };
-    static const juce::Colour textRulerDim { 0xff4a5268 };
-    static const juce::Colour textPinkMid  { 0xffb83080 };
-    static const juce::Colour textPinkFull { 0xffde369d };
-    static const juce::Colour textBlueMid  { 0xff6a80aa };
-    static const juce::Colour borderViz    { 0xff2a1f2a };
+    static const juce::Colour textRuler    { 0xff9995aa };
+    static const juce::Colour textRulerDim { 0xff625b74 };
+    static const juce::Colour textPinkMid  { 0xffd24c98 };
+    static const juce::Colour textPinkFull { 0xffff62b4 };
+    static const juce::Colour textBlueMid  { 0xff79e9f3 };
+    static const juce::Colour borderViz    { 0xff58465f };
 }
 
 //==============================================================================
@@ -380,17 +380,35 @@ void VisualizerComponent::paint (juce::Graphics& g)
     };
 
     // ── 1. Background ─────────────────────────────────────────────────────
-    g.setColour (juce::Colour (0xff160d16));
+    juce::ColourGradient smokedGlass (juce::Colour (0xff21162d), bounds.getX(), bounds.getY(),
+                                      P::dark, bounds.getX(), bounds.getBottom(), false);
+    g.setGradientFill (smokedGlass);
     g.fillRoundedRectangle (bounds, 8.0f);
 
-    g.setColour (VizPalette::borderViz);
-    g.drawRoundedRectangle (bounds.reduced (0.5f), 8.0f, 1.0f);
+    // A restrained reflection on the glass face, kept inside the meter opening.
+    juce::Path glassSweep;
+    glassSweep.startNewSubPath (bounds.getX() + 2.0f, bounds.getY() + 2.0f);
+    glassSweep.lineTo (bounds.getX() + bounds.getWidth() * 0.42f, bounds.getY() + 2.0f);
+    glassSweep.cubicTo (bounds.getX() + bounds.getWidth() * 0.34f, bounds.getY() + 10.0f,
+                        bounds.getX() + bounds.getWidth() * 0.22f, bounds.getY() + 22.0f,
+                        bounds.getX() + bounds.getWidth() * 0.17f, bounds.getY() + bounds.getHeight() * 0.22f);
+    glassSweep.lineTo (bounds.getX() + 2.0f, bounds.getY() + bounds.getHeight() * 0.30f);
+    glassSweep.closeSubPath();
+    juce::ColourGradient glassReflection (juce::Colour (0x18fff7ef), bounds.getX() + 14.0f, bounds.getY() + 2.0f,
+                                          juce::Colours::transparentBlack,
+                                          bounds.getX() + bounds.getWidth() * 0.34f,
+                                          bounds.getY() + bounds.getHeight() * 0.22f, false);
+    g.setGradientFill (glassReflection);
+    g.fillPath (glassSweep);
+
+    g.setColour (juce::Colour (0xff07080d).withAlpha (0.8f));
+    g.drawRoundedRectangle (bounds.reduced (1.0f), 7.0f, 1.2f);
 
     // ── 2. Headroom zone tint ─────────────────────────────────────────────
     {
         const float zoneTop = dbToY ( 5.0f);
         const float zoneBot = dbToY ( 0.0f);
-        g.setColour (P::pink.withAlpha (0.04f));
+        g.setColour (P::pink.withAlpha (0.07f));
         g.fillRect (vizX, zoneTop, vizW, zoneBot - zoneTop);
     }
 
@@ -399,14 +417,14 @@ void VisualizerComponent::paint (juce::Graphics& g)
         struct GridLine { float db; juce::Colour col; };
         const GridLine grid[] =
         {
-            {  5.0f, juce::Colour (0xff2a1525) },
-            {  3.0f, juce::Colour (0xff241020) },
-            {  0.0f, juce::Colour (0xff3a1a32) },
-            { -3.0f, juce::Colour (0xff1e1a26) },
-            { -6.0f, juce::Colour (0xff1c1822) },
-            {-12.0f, juce::Colour (0xff1a161e) },
-            {-24.0f, juce::Colour (0xff17141a) },
-            {-48.0f, juce::Colour (0xff151218) },
+            {  5.0f, juce::Colour (0xff382238) },
+            {  3.0f, juce::Colour (0xff2e1d32) },
+            {  0.0f, juce::Colour (0xff66304f) },
+            { -3.0f, juce::Colour (0xff30283b) },
+            { -6.0f, juce::Colour (0xff2a2436) },
+            {-12.0f, juce::Colour (0xff252130) },
+            {-24.0f, juce::Colour (0xff211d29) },
+            {-48.0f, juce::Colour (0xff191720) },
         };
 
         for (auto& gl : grid)
@@ -725,6 +743,31 @@ void VisualizerComponent::paint (juce::Graphics& g)
         const float catY = (dbToY (5.0f) + dbToY (0.0f)) * 0.5f;
         paintCat (g, catX, catY, 0.75f);
     }
+
+    // Soft, diagonal specular reflection on the glass face, over the meter image.
+    juce::Path glassReflectionPath;
+    glassReflectionPath.startNewSubPath (bounds.getX() + 2.0f, bounds.getY() + 2.0f);
+    glassReflectionPath.lineTo (bounds.getX() + bounds.getWidth() * 0.48f, bounds.getY() + 2.0f);
+    glassReflectionPath.cubicTo (bounds.getX() + bounds.getWidth() * 0.41f, bounds.getY() + 15.0f,
+                                 bounds.getX() + bounds.getWidth() * 0.30f, bounds.getY() + 34.0f,
+                                 bounds.getX() + bounds.getWidth() * 0.22f, bounds.getY() + bounds.getHeight() * 0.28f);
+    glassReflectionPath.lineTo (bounds.getX() + 2.0f, bounds.getY() + bounds.getHeight() * 0.38f);
+    glassReflectionPath.closeSubPath();
+    juce::ColourGradient reflection (juce::Colour (0x24fff7ee), bounds.getX() + 12.0f, bounds.getY() + 2.0f,
+                                     juce::Colours::transparentBlack,
+                                     bounds.getX() + bounds.getWidth() * 0.32f,
+                                     bounds.getY() + bounds.getHeight() * 0.30f, false);
+    g.setGradientFill (reflection);
+    g.fillPath (glassReflectionPath);
+
+    juce::Path reflectionEdge;
+    reflectionEdge.startNewSubPath (bounds.getX() + 5.0f, bounds.getY() + 3.0f);
+    reflectionEdge.cubicTo (bounds.getX() + bounds.getWidth() * 0.22f, bounds.getY() + 2.0f,
+                            bounds.getX() + bounds.getWidth() * 0.40f, bounds.getY() + 3.0f,
+                            bounds.getX() + bounds.getWidth() * 0.47f, bounds.getY() + 4.0f);
+    g.setColour (juce::Colour (0x28fffaf3));
+    g.strokePath (reflectionEdge, juce::PathStrokeType (1.0f,
+        juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
 //==============================================================================

@@ -52,6 +52,20 @@ CustomLookAndFeel::CustomLookAndFeel()
 
 CustomLookAndFeel::~CustomLookAndFeel() {}
 
+juce::Font CustomLookAndFeel::getTextButtonFont(juce::TextButton&, int buttonHeight)
+{
+    return juce::Font(juce::FontOptions()
+        .withName("Arial Rounded MT Bold")
+        .withHeight(juce::jlimit(10.0f, 13.0f, buttonHeight * 0.42f)));
+}
+
+juce::Font CustomLookAndFeel::getPopupMenuFont()
+{
+    return juce::Font(juce::FontOptions()
+        .withName("Arial Rounded MT Bold")
+        .withHeight(13.0f));
+}
+
 //==============================================================================
 // drawComboBox
 // Apple-style: solid surfaceRaise fill + 1px borderMid stroke.
@@ -147,11 +161,10 @@ void CustomLookAndFeel::drawPopupMenuItem(juce::Graphics& g,
         g.fillEllipse(cx - 2.5f, cy - 2.5f, 5.f, 5.f);
     }
 
-    // Label — sans for readability, solid textPrimary
+    // Rounded labels keep popup typography consistent with the pedal face.
     g.setFont(juce::Font(juce::FontOptions()
-        .withName(juce::Font::getDefaultSansSerifFontName())
-        .withHeight(12.0f)
-        .withStyle("Regular")));
+        .withName("Arial Rounded MT Bold")
+        .withHeight(12.0f)));
 
     g.setColour(isHighlighted ? Palette::textPrimary : Palette::textSecondary);
     g.drawText(text,

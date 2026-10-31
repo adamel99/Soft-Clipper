@@ -8,16 +8,9 @@
 //==============================================================================
 namespace EditorPalette
 {
-    static const juce::Colour dark    { 0xff110b11 };
-    static const juce::Colour dark2   { 0xff0d090d };
-    static const juce::Colour cream   { 0xfff9dec9 };
-    static const juce::Colour blue    { 0xff99b2dd };
-    static const juce::Colour pink    { 0xffde369d };
+    static const juce::Colour cream   { 0xfff9f2ee };
+    static const juce::Colour pink    { 0xffed79b6 };
 
-    static inline juce::Colour textPrimary()   { return cream; }
-    static inline juce::Colour textSecondary() { return cream.withAlpha(0.60f); }
-    static inline juce::Colour textTertiary()  { return cream.withAlpha(0.36f); }
-    static inline juce::Colour textGhost()     { return cream.withAlpha(0.14f); }
 }
 
 //==============================================================================
@@ -40,20 +33,19 @@ public:
     void paint(juce::Graphics& g) override
     {
         const auto b = getLocalBounds().toFloat();
-        const float cellW = b.getWidth() / 3.0f;
-        const float cellH = b.getHeight() / 2.0f;
-        const float pad   = 2.5f;
-        const float r     = 4.0f;
+        const float cellW = b.getWidth() / (float) numModes;
+        const float cellH = b.getHeight();
+        const float pad   = 3.0f;
+        const float r     = 7.0f;
 
         g.setFont(juce::Font(juce::FontOptions()
-            .withName(juce::Font::getDefaultMonospacedFontName())
-            .withHeight(10.5f)
-            .withStyle("Bold")));
+            .withName("Arial Rounded MT Bold")
+            .withHeight(10.5f)));
 
         for (int i = 0; i < numModes; ++i)
         {
-            const int col = i % 3;
-            const int row = i / 3;
+            const int col = i;
+            const int row = 0;
             const bool active = (i == activeMode);
 
             const juce::Rectangle<float> cell(
@@ -64,31 +56,28 @@ public:
 
             if (active)
             {
-                g.setColour(EditorPalette::pink.withAlpha(0.13f));
+                g.setColour(juce::Colour(0xff321c31));
                 g.fillRoundedRectangle(cell, r);
-                g.setColour(EditorPalette::pink.withAlpha(0.42f));
+                g.setColour(EditorPalette::pink);
                 g.drawRoundedRectangle(cell.reduced(0.5f), r, 0.5f);
             }
             else
             {
-                g.setColour(EditorPalette::cream.withAlpha(0.025f));
+                g.setColour(juce::Colour(0xfff1c4d8));
                 g.fillRoundedRectangle(cell, r);
-                g.setColour(EditorPalette::cream.withAlpha(0.08f));
+                g.setColour(juce::Colour(0xffcb8fae));
                 g.drawRoundedRectangle(cell.reduced(0.5f), r, 0.5f);
             }
 
-            g.setColour(active ? EditorPalette::cream : EditorPalette::cream.withAlpha(0.60f));
+            g.setColour(active ? EditorPalette::cream : juce::Colour(0xff52374c));
             g.drawText(modeLabels[i], cell.toNearestInt(), juce::Justification::centred);
         }
     }
 
     void mouseDown(const juce::MouseEvent& e) override
     {
-        const float cellW = (float)getWidth() / 3.0f;
-        const float cellH = (float)getHeight() / 2.0f;
-        const int col = juce::jlimit(0, 2, (int)(e.position.x / cellW));
-        const int row = juce::jlimit(0, 1, (int)(e.position.y / cellH));
-        const int idx = row * 3 + col;
+        const float cellW = (float)getWidth() / (float) numModes;
+        const int idx = juce::jlimit(0, numModes - 1, (int)(e.position.x / cellW));
 
         if (idx == activeMode)
             return;
@@ -143,11 +132,7 @@ private:
     CustomLookAndFeel customLookAndFeel;
     VisualizerComponent visualizer;
 
-    static constexpr int headerH   = 58;
-    static constexpr int controlsH = 126;
-    static constexpr int satPanelW = 176;
-    static constexpr int padX      = 20;
-    static constexpr int padY      = 14;
+    static constexpr int padX = 32;
 
     juce::ComponentBoundsConstrainer boundsConstrainer;
 
@@ -178,7 +163,6 @@ private:
     bool activePresetIsUser = false;
 
     float headerCeilingDb = 0.0f;
-    float pulsePhase      = 0.0f;
     bool isRestoringState = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ViveAudioProcessorEditor)

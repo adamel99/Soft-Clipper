@@ -31,11 +31,12 @@ namespace Params
 
     enum class SaturationMode
     {
-        Clean      = 0,
-        Tube       = 1,
-        Tape       = 2,
-        SolidState = 3,
-        Asymmetric = 4
+        Off        = 0,
+        Clean      = 1,
+        Tube       = 2,
+        Tape       = 3,
+        SolidState = 4,
+        Asymmetric = 5
     };
 
     // ============================================================================

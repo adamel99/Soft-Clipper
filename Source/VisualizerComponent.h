@@ -36,7 +36,8 @@ public:
     // Called from the AUDIO THREAD (see PluginProcessor::processBlock).
     // Must be lock-free / non-blocking / non-allocating.
     void pushSamples (const juce::AudioBuffer<float>& input,
-                      const juce::AudioBuffer<float>& output);
+                      const juce::AudioBuffer<float>& output,
+                      const juce::AudioBuffer<float>& ceilingStageOutput);
 
     void setClippingThreshold (float newThresholdLinear);
 
@@ -61,18 +62,6 @@ private:
     static void buildFillPath   (juce::Path& fillPath,
                                  const std::vector<juce::Point<float>>& pts,
                                  float vizX, float plotBot, float vizW);
-
-    // ── Cat mascot ────────────────────────────────────────────────────────
-    enum class CatState { Idle, Active, Peak, Clipping, Nervous };
-    CatState catState    = CatState::Idle;
-    float    catAnimPhase  = 0.0f;   // 0..1, advances each timerCallback tick
-    float    catBlinkPhase = 0.0f;   // 0..1, separate blink rhythm
-    bool     catBlinking   = false;
-    
-    float catShakeDecay = 0.0f;
-    float catMouthOpen = 0.0f;
-
-    void paintCat (juce::Graphics& g, float cx, float cy, float scale) const;
 
     // ── FIFO ──────────────────────────────────────────────────────────────
     // INTERVIEW NOTE: juce::AbstractFifo implements a lock-free circular buffer

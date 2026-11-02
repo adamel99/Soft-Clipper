@@ -159,15 +159,21 @@ void ViveAudioProcessorEditor::configureKnob(juce::Slider& slider,
     addAndMakeVisible(slider);
 
     nameLabel.setText(name, juce::dontSendNotification);
-    nameLabel.setFont(Fonts::rounded(10.5f));
+    nameLabel.setFont(Fonts::rounded(11.5f));
     nameLabel.setJustificationType(juce::Justification::centred);
-    nameLabel.setColour(juce::Label::textColourId, juce::Colour(0xff4b2d45));
+    nameLabel.setColour(juce::Label::textColourId, juce::Colour(0xfffff6fb));
+    nameLabel.setColour(juce::Label::backgroundColourId, juce::Colour(0xff38223b));
+    nameLabel.setColour(juce::Label::outlineColourId, juce::Colour(0xff8e5277));
+    nameLabel.setOpaque(true);
     addAndMakeVisible(nameLabel);
 
     valueLabel.setText("-", juce::dontSendNotification);
-    valueLabel.setFont(Fonts::rounded(12.0f));
+    valueLabel.setFont(Fonts::mono(11.5f, true));
     valueLabel.setJustificationType(juce::Justification::centred);
-    valueLabel.setColour(juce::Label::textColourId, juce::Colour(0xff39243a));
+    valueLabel.setColour(juce::Label::textColourId, juce::Colour(0xff38223b));
+    valueLabel.setColour(juce::Label::backgroundColourId, juce::Colour(0xfffff4f8));
+    valueLabel.setColour(juce::Label::outlineColourId, juce::Colour(0xffc780a1));
+    valueLabel.setOpaque(true);
     addAndMakeVisible(valueLabel);
 
     auto updateValueLabel = [this, &slider, &valueLabel, suffix]()
@@ -430,7 +436,7 @@ void ViveAudioProcessorEditor::rebuildBackgroundCache()
     // Fine, hand-spaced flecks give the plate a soft coated texture without competing with controls.
     juce::Random flecks(7319);
     const auto textureBounds = plate.reduced(9.0f, 8.0f);
-    for (int i = 0; i < 420; ++i)
+    for (int i = 0; i < 120; ++i)
     {
         const float x = textureBounds.getX() + flecks.nextFloat() * textureBounds.getWidth();
         const float y = textureBounds.getY() + flecks.nextFloat() * textureBounds.getHeight();
@@ -746,19 +752,23 @@ void ViveAudioProcessorEditor::resized()
         const float usableW = card.getWidth() - insetX * 2.0f;
         const float slotW = usableW / static_cast<float>(count);
         const float centerX = card.getX() + insetX + slotW * (static_cast<float>(index) + 0.5f);
-        const float knobSize = juce::jlimit(58.0f, 76.0f, card.getHeight() - 174.0f);
-        const float blockY = card.getY() + 26.0f;
-        const float labelW = slotW - 8.0f;
+        const float knobSize = juce::jlimit(68.0f, 86.0f, card.getHeight() - 164.0f);
+        const float blockY = card.getY() + 25.0f;
+        const float labelW = slotW - 4.0f;
         const float labelX = centerX - labelW * 0.5f;
 
-        nameLbl.setBounds((int)std::round(labelX), (int)std::round(blockY),
-                          (int)std::round(labelW), 13);
+        // Put the live value above the dial and its name directly beneath it,
+        // matching the compact hardware labels on the pedal reference.
+        valueLbl.setBounds((int)std::round(labelX + 8.0f),
+                           (int)std::round(blockY),
+                           (int)std::round(labelW - 16.0f), 20);
         slider.setBounds((int)std::round(centerX - knobSize * 0.5f),
-                         (int)std::round(blockY + 15.0f),
+                         (int)std::round(blockY + 17.0f),
                          (int)std::round(knobSize),
                          (int)std::round(knobSize));
-        valueLbl.setBounds((int)std::round(labelX), (int)std::round(blockY + 15.0f + knobSize),
-                           (int)std::round(labelW), 20);
+        nameLbl.setBounds((int)std::round(labelX),
+                          (int)std::round(blockY + 19.0f + knobSize),
+                          (int)std::round(labelW), 18);
     };
 
     placeKnob(inputGainSlider,  inputGainLabel,  inputGainValue,  layout.inputCard,  0, 1);

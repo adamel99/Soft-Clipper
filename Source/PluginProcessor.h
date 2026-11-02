@@ -67,8 +67,8 @@ private:
         2,
         2,   // 2^2 = 4x
         juce::dsp::Oversampling<float>::filterHalfBandFIREquiripple,
-        true,
-        false
+        true, // maximum filter quality
+        true  // integer latency for exact dry/wet alignment
     };
     static constexpr int oversampleFactor = 4;
 
@@ -90,6 +90,8 @@ private:
 
     // ── Working buffers ───────────────────────────────────────────────────
     juce::AudioBuffer<float> dryBuffer;
+    juce::AudioBuffer<float> ceilingStageBuffer;
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::None> dryDelayLine;
 
     // ── Per-block ceiling snapshot ────────────────────────────────────────
     std::vector<float> ceilingPerSample;

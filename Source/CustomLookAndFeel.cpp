@@ -177,15 +177,7 @@ void CustomLookAndFeel::drawPopupMenuItem(juce::Graphics& g,
 //==============================================================================
 // drawRotarySlider
 //
-// Final minimal version:
-//   • Track ring  — solid borderMid-weight, no alpha blending
-//   • Value arc   — 2.5px, full accent colour (pink or blue)
-//   • Center disc — solid discFill + solid borderMid rim
-//   • Tick        — full textPrimary, 1.5px
-//   • No halo ring, no gradients, no outer decorative elements
-//   • Bipolar: arc from midpoint (inputGain, outputGain, ceiling)
-//   • Pink identity: drive, ceiling
-//   • Blue identity: inputGain, mix, outputGain
+// Silver stompbox knobs with a ribbed dark sidewall and pedal-specific pointer.
 //==============================================================================
 void CustomLookAndFeel::drawRotarySlider(juce::Graphics& g,
     int x, int y, int width, int height,
@@ -197,73 +189,89 @@ void CustomLookAndFeel::drawRotarySlider(juce::Graphics& g,
     const float cx = (float)x + (float)width * 0.5f;
     const float cy = (float)y + (float)height * 0.5f;
     const float size = (float)juce::jmin(width, height);
-    const float r = size * 0.5f - 5.0f;
     const float angle = rotaryStartAngle
         + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
 
     const juce::String name = slider.getName();
-    const bool isPink = (name == "ceiling" || name == "mix" || name == "outputGain");
-    const juce::Colour arcCol = isPink ? Palette::pink : Palette::blue;
-
-    const bool  bipolar = (name == "inputGain" || name == "outputGain" || name == "ceiling");
-    const float midAngle = (rotaryStartAngle + rotaryEndAngle) * 0.5f;
-    const float arcFrom = bipolar ? midAngle : rotaryStartAngle;
+    const bool isInput = name == "inputGain";
+    const bool isOutput = name == "outputGain";
+    const juce::Colour pointerColour = isInput ? juce::Colour(0xff503487)
+                                         : isOutput ? juce::Colour(0xff344c2d)
+                                                    : juce::Colour(0xff572b64);
     const bool hovered = slider.isMouseOverOrDragging();
     const bool pressed = slider.isMouseButtonDown();
-    const float lift = pressed ? 0.0f : (hovered ? 1.0f : 0.35f);
+    const float faceR = size * 0.39f;
+    const float sideR = faceR + 3.6f;
 
-    // ── 1. Track ring — solid colour, clearly visible on Windows ─────────
+    // Drop shadow, black knurled skirt, then a thin chrome lip.
+    g.setColour(juce::Colour(0x660d0710));
+    g.fillEllipse(cx - sideR - 1.0f, cy - sideR + 3.5f,
+                  (sideR + 1.0f) * 2.0f, (sideR + 1.0f) * 2.0f);
+    juce::ColourGradient skirt(juce::Colour(0xff65616a), cx, cy - sideR,
+                               juce::Colour(0xff17151b), cx, cy + sideR, false);
+    g.setGradientFill(skirt);
+    g.fillEllipse(cx - sideR, cy - sideR, sideR * 2.0f, sideR * 2.0f);
+
+    for (int i = 0; i < 48; ++i)
     {
-        juce::Path track;
-        track.addCentredArc(cx, cy, r, r, 0.f, rotaryStartAngle, rotaryEndAngle, true);
-        // Use a solid pre-mixed colour rather than alpha-dimmed cream
-        g.setColour(Palette::borderMid.withAlpha(0.92f));
-        g.strokePath(track, juce::PathStrokeType(1.5f,
-            juce::PathStrokeType::curved,
-            juce::PathStrokeType::rounded));
+        const float a = juce::MathConstants<float>::twoPi * (float)i / 48.0f;
+        const float outer = sideR - 0.5f;
+        const float inner = faceR + 0.8f;
+        g.setColour(i % 2 == 0 ? juce::Colour(0xffaaa6af) : juce::Colour(0xff29262e));
+        g.drawLine(cx + std::sin(a) * inner, cy - std::cos(a) * inner,
+                   cx + std::sin(a) * outer, cy - std::cos(a) * outer, 1.0f);
     }
 
-    // ── 2. Value arc — 2.5px, full accent colour ──────────────────────────
-    if (std::abs(angle - arcFrom) > 0.01f)
-    {
-        juce::Path arc;
-        arc.addCentredArc(cx, cy, r, r, 0.f, arcFrom, angle, true);
-        g.setColour(arcCol.brighter(pressed ? 0.0f : 0.12f));
-        g.strokePath(arc, juce::PathStrokeType(2.5f,
-            juce::PathStrokeType::curved,
-            juce::PathStrokeType::rounded));
-    }
+    g.setColour(juce::Colour(0xffd9d6dc));
+    g.drawEllipse(cx - faceR - 0.6f, cy - faceR - 0.6f,
+                  (faceR + 0.6f) * 2.0f, (faceR + 0.6f) * 2.0f, 1.0f);
 
-    // ── 3. Center disc ────────────────────────────────────────────────────
-    const float kr = r * 0.52f;
+    juce::ColourGradient face(juce::Colour(0xfffaf9fb), cx - faceR * 0.7f, cy - faceR * 0.8f,
+                              juce::Colour(0xff89868f), cx + faceR * 0.6f, cy + faceR * 0.9f, false);
+    face.addColour(0.42, juce::Colour(0xffe0dee3));
+    g.setGradientFill(face);
+    g.fillEllipse(cx - faceR, cy - faceR, faceR * 2.0f, faceR * 2.0f);
+    g.setColour(juce::Colour(0xff77727b));
+    g.drawEllipse(cx - faceR, cy - faceR, faceR * 2.0f, faceR * 2.0f, 0.8f);
 
-    g.setColour(juce::Colour(0xff1c1220));
-    g.fillEllipse(cx - kr, cy - kr, kr * 2.f, kr * 2.f);
-
-    // Disc rim — solid borderMid, no alpha
-    g.setColour(Palette::borderMid);
-    g.drawEllipse(cx - kr, cy - kr, kr * 2.f, kr * 2.f, 1.0f);
-
-    // ── 4. Tick — full textPrimary, clean and crisp ───────────────────────
-    const float tickOuter = kr - 2.0f;
-    const float tickInner = kr * 0.36f;
+    // A narrow colored pointer like the painted index line on the reference knobs.
+    const float tickOuter = faceR * 0.78f;
+    const float tickInner = faceR * 0.10f;
     const float sinA = std::sin(angle);
     const float cosA = std::cos(angle);
-
-    g.setColour(Palette::textPrimary);
-    g.drawLine(cx + sinA * tickInner,
-        cy - cosA * tickInner,
-        cx + sinA * tickOuter,
-        cy - cosA * tickOuter,
-        1.5f);
+    const float pointerX1 = cx + sinA * tickInner;
+    const float pointerY1 = cy - cosA * tickInner;
+    const float pointerX2 = cx + sinA * tickOuter;
+    const float pointerY2 = cy - cosA * tickOuter;
+    g.setColour(juce::Colour(0x550c0810));
+    g.drawLine(pointerX1 + 0.7f, pointerY1 + 1.0f,
+               pointerX2 + 0.7f, pointerY2 + 1.0f, 4.0f);
+    g.setColour(pointerColour.brighter(hovered && ! pressed ? 0.18f : 0.0f));
+    g.drawLine(pointerX1, pointerY1, pointerX2, pointerY2, 2.7f);
+    g.setColour(juce::Colour(0xff625c66));
+    g.fillEllipse(cx - 2.4f, cy - 2.4f, 4.8f, 4.8f);
+    g.setColour(juce::Colour(0xfff5f3f5));
+    g.fillEllipse(cx - 1.1f, cy - 1.1f, 2.2f, 2.2f);
 }
 
 //==============================================================================
-// drawLabel — transparent bg, respects the label's own text colour
+// drawLabel — compact, rounded plates keep labels legible over decorative shells.
 //==============================================================================
 void CustomLookAndFeel::drawLabel(juce::Graphics& g, juce::Label& label)
 {
-    g.fillAll(juce::Colours::transparentBlack);
+    const auto bounds = label.getLocalBounds().toFloat();
+    const auto background = label.findColour(juce::Label::backgroundColourId);
+    const auto outline = label.findColour(juce::Label::outlineColourId);
+    if (background.getAlpha() != 0)
+    {
+        g.setColour(background);
+        g.fillRoundedRectangle(bounds, bounds.getHeight() * 0.32f);
+        if (outline.getAlpha() != 0)
+        {
+            g.setColour(outline);
+            g.drawRoundedRectangle(bounds.reduced(0.5f), bounds.getHeight() * 0.32f, 0.8f);
+        }
+    }
     g.setColour(label.findColour(juce::Label::textColourId));
     g.setFont(label.getFont());
     g.drawText(label.getText(),

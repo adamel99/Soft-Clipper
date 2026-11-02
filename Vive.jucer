@@ -4,6 +4,12 @@
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
   <MAINGROUP id="Ii1025" name="Vive">
     <GROUP id="{6509FFD4-A1D6-6BF1-2279-B4FAD0A93FC2}" name="Source">
+      <FILE id="bBub01" name="blue_bubbles.jpg" compile="0" resource="0"
+            file="Resources/blue_bubbles.jpg"/>
+      <FILE id="pCot02" name="pink_cotton.jpg" compile="0" resource="0"
+            file="Resources/pink_cotton.jpg"/>
+      <FILE id="gMos03" name="green_moss.jpg" compile="0" resource="0"
+            file="Resources/green_moss.jpg"/>
       <FILE id="lpgPEy" name="VisualizerComponent.h" compile="0" resource="0"
             file="Source/VisualizerComponent.h"/>
       <FILE id="WoUQse" name="VisualizerComponent.cpp" compile="1" resource="0"

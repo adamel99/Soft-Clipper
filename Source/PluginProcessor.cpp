@@ -133,6 +133,10 @@ ViveAudioProcessor::SaturationResult ViveAudioProcessor::shapeSaturation(float s
 
     switch (satMode)
     {
+    case static_cast<int>(Params::SaturationMode::Off):
+        result.sample = sample;
+        return result;
+
     case static_cast<int>(Params::SaturationMode::Clean):
     {
         const float t = std::tanh(driven / driveCurve);
@@ -235,7 +239,17 @@ void ViveAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 
     oversampler.initProcessing(static_cast<size_t>(preparedBlockSize));
     oversampler.reset();
-    setLatencySamples(static_cast<int>(oversampler.getLatencyInSamples()));
+    const auto oversamplerLatency = oversampler.getLatencyInSamples();
+    setLatencySamples(juce::roundToInt(oversamplerLatency));
+
+    dryDelayLine.setMaximumDelayInSamples(juce::jmax(1, juce::roundToInt(oversamplerLatency) + 1));
+    dryDelayLine.prepare(juce::dsp::ProcessSpec {
+        sampleRate,
+        static_cast<juce::uint32>(preparedBlockSize),
+        static_cast<juce::uint32>(juce::jmax(1, getTotalNumOutputChannels()))
+    });
+    dryDelayLine.setDelay(oversamplerLatency);
+    dryDelayLine.reset();
 
     const double rampSeconds = 0.02;
 
@@ -256,8 +270,12 @@ void ViveAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     outputGainSmoother.setCurrentAndTargetValue(
         juce::Decibels::decibelsToGain(outputGainParam != nullptr ? outputGainParam->load() : Params::Ranges::OUTPUT_GAIN_DEFAULT));
 
-    dryBuffer.setSize(2, preparedBlockSize, false, true, true);
+    dryBuffer.setSize(juce::jmax(1, getTotalNumOutputChannels()),
+                      preparedBlockSize, false, true, true);
     dryBuffer.clear();
+    ceilingStageBuffer.setSize(juce::jmax(1, getTotalNumOutputChannels()),
+                               preparedBlockSize, false, true, true);
+    ceilingStageBuffer.clear();
 
     ceilingPerSample.resize(static_cast<size_t>(preparedBlockSize), 1.0f);
     drivePerSample.resize(static_cast<size_t>(preparedBlockSize), 0.0f);
@@ -266,6 +284,7 @@ void ViveAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 void ViveAudioProcessor::releaseResources()
 {
     oversampler.reset();
+    dryDelayLine.reset();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -318,7 +337,6 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
     const int numSamples = buffer.getNumSamples();
     const int numChannels = juce::jmin(totalNumInputChannels, totalNumOutputChannels);
     auto* const* bufferChannels = buffer.getArrayOfWritePointers();
-    const auto* const* dryChannels = dryBuffer.getArrayOfReadPointers();
 
     for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear(i, 0, numSamples);
@@ -332,6 +350,7 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
     const float inputGainDb = inputGainParam != nullptr ? inputGainParam->load() : Params::Ranges::INPUT_GAIN_DEFAULT;
     const float driveValue = driveParam != nullptr ? driveParam->load() : Params::Ranges::DRIVE_DEFAULT;
     const float ceilingDb = ceilingParam != nullptr ? ceilingParam->load() : Params::Ranges::CEILING_DEFAULT;
+    const float finalCeiling = juce::Decibels::decibelsToGain(ceilingDb);
     const float mixValue = mixParam != nullptr ? mixParam->load() : Params::Ranges::MIX_DEFAULT;
     const float outputGainDb = outputGainParam != nullptr ? outputGainParam->load() : Params::Ranges::OUTPUT_GAIN_DEFAULT;
 
@@ -351,7 +370,14 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
             bufferChannels[ch][s] *= gain;
     }
 
-    dryBuffer.makeCopyOf(buffer);
+    // Keep the pre-saturation signal in a buffer whose channel count and block
+    // capacity were allocated in prepareToPlay(). Copying channel-by-channel
+    // avoids AudioBuffer::makeCopyOf() resizing this buffer in the audio callback.
+    for (int ch = 0; ch < dryBuffer.getNumChannels(); ++ch)
+        dryBuffer.clear(ch, 0, numSamples);
+    for (int ch = 0; ch < numChannels; ++ch)
+        dryBuffer.copyFrom(ch, 0, buffer, ch, 0, numSamples);
+    const auto* const* dryChannels = dryBuffer.getArrayOfReadPointers();
 
     for (int s = 0; s < numSamples; ++s)
     {
@@ -373,6 +399,8 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
                 const int baseIdx = juce::jmin(s >> 2, numSamples - 1);
                 const float driveAmount = drivePerSample[static_cast<size_t>(baseIdx)];
                 const float c = ceilingPerSample[static_cast<size_t>(baseIdx)];
+                if (satMode == static_cast<int>(Params::SaturationMode::Off))
+                    continue;
                 const auto shaped = shapeSaturation(osSamples[s], driveAmount, satMode, c);
                 osSamples[s] = clampToCeiling(softClipFSC(shaped.sample, c), c);
             }
@@ -390,24 +418,27 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
             for (int ch = 0; ch < numChannels; ++ch)
             {
                 float& wet = bufferChannels[ch][s];
-                wet = clampToCeiling(wet, c);
+                dryDelayLine.pushSample(ch, dryChannels[ch][s]);
+                const float alignedDry = dryDelayLine.popSample(ch);
+                if (satMode != static_cast<int>(Params::SaturationMode::Off))
+                    wet = clampToCeiling(wet, c);
 
                 if (mix < 0.999f)
-                    wet = dryChannels[ch][s] * dryMix + wet * mix;
+                    wet = alignedDry * dryMix + wet * mix;
 
+                // Preserve the signal at the ceiling stage for clip metering;
+                // Output Gain is applied after this stage.
+                ceilingStageBuffer.setSample(ch, s, wet);
+                wet = clampToCeiling(wet, finalCeiling);
                 wet *= outGain;
             }
         }
     }
 
-    float visualThreshold = ceilingPerSample.empty() ? 1.0f : ceilingPerSample.front();
-    for (int s = 1; s < numSamples; ++s)
-        visualThreshold = juce::jmin(visualThreshold, ceilingPerSample[static_cast<size_t>(s)]);
-
     if (visualizer != nullptr)
     {
-        visualizer->setClippingThreshold(visualThreshold);
-        visualizer->pushSamples(dryBuffer, buffer);
+        visualizer->setClippingThreshold(finalCeiling);
+        visualizer->pushSamples(dryBuffer, buffer, ceilingStageBuffer);
     }
 }
 

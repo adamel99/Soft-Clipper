@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 #include "CustomLookAndFeel.h"
 #include "VisualizerComponent.h"
+#include "PluginFonts.h"
 
 //==============================================================================
 namespace EditorPalette
@@ -38,9 +39,7 @@ public:
         const float pad   = 3.0f;
         const float r     = 7.0f;
 
-        g.setFont(juce::Font(juce::FontOptions()
-            .withName("Arial Rounded MT Bold")
-            .withHeight(10.5f)));
+        g.setFont(ViveFonts::bold(10.5f));
 
         for (int i = 0; i < numModes; ++i)
         {

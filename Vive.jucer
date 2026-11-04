@@ -4,6 +4,18 @@
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
   <MAINGROUP id="Ii1025" name="Vive">
     <GROUP id="{6509FFD4-A1D6-6BF1-2279-B4FAD0A93FC2}" name="Source">
+      <FILE id="nuni01" name="NunitoRegular.ttf" compile="0" resource="0"
+            file="Resources/Fonts/NunitoRegular.ttf"/>
+      <FILE id="nuni02" name="NunitoSemiBold.ttf" compile="0" resource="0"
+            file="Resources/Fonts/NunitoSemiBold.ttf"/>
+      <FILE id="nuni03" name="NunitoBold.ttf" compile="0" resource="0"
+            file="Resources/Fonts/NunitoBold.ttf"/>
+      <FILE id="nuni04" name="OFL.txt" compile="0" resource="0"
+            file="Resources/Fonts/OFL.txt"/>
+      <FILE id="fontCpp" name="EmbeddedFontData.cpp" compile="1" resource="0" file="Source/EmbeddedFontData.cpp"/>
+      <FILE id="fontDataH" name="EmbeddedFontData.h" compile="0" resource="0" file="Source/EmbeddedFontData.h"/>
+      <FILE id="fontH1" name="PluginFonts.h" compile="0" resource="0"
+            file="Source/PluginFonts.h"/>
       <FILE id="bBub01" name="blue_bubbles.jpg" compile="0" resource="0"
             file="Resources/blue_bubbles.jpg"/>
       <FILE id="pCot02" name="pink_cotton.jpg" compile="0" resource="0"

@@ -2,45 +2,11 @@
 
 namespace Fonts
 {
-    static const juce::String& resolvedName()
-    {
-        static const juce::String name = []()
-        {
-            const auto available = juce::Font::findAllTypefaceNames();
-            if (available.contains("Consolas")) return juce::String("Consolas");
-            if (available.contains("Menlo"))    return juce::String("Menlo");
-            return juce::String(juce::Font::getDefaultMonospacedFontName());
-        }();
-
-        return name;
-    }
-
-    static juce::Font mono(float height, bool bold = false)
-    {
-        return juce::Font(juce::FontOptions()
-            .withName(resolvedName())
-            .withHeight(height)
-            .withStyle(bold ? "Bold" : "Regular"));
-    }
-
-    static const juce::String& roundedName()
-    {
-        static const juce::String name = []()
-        {
-            const auto available = juce::Font::findAllTypefaceNames();
-            if (available.contains("Arial Rounded MT Bold")) return juce::String("Arial Rounded MT Bold");
-            if (available.contains("Avenir Next"))           return juce::String("Avenir Next");
-            return juce::String(juce::Font::getDefaultSansSerifFontName());
-        }();
-        return name;
-    }
+    static juce::Font semibold(float height) { return ViveFonts::semiBold(height); }
 
     static juce::Font rounded(float height, bool bold = true)
     {
-        return juce::Font(juce::FontOptions()
-            .withName(roundedName())
-            .withHeight(height)
-            .withStyle(bold ? "Bold" : "Regular"));
+        return bold ? ViveFonts::bold(height) : ViveFonts::regular(height);
     }
 }
 
@@ -61,7 +27,7 @@ namespace
     {
         constexpr float side = 32.0f;
         constexpr float headerH = 74.0f;
-        constexpr float controlsH = 286.0f;
+        constexpr float controlsH = 220.0f;
         constexpr float gap = 44.0f;
 
         EditorLayout layout;
@@ -69,8 +35,8 @@ namespace
         layout.controlStrip = { side, H - controlsH - 26.0f, W - side * 2.0f, controlsH };
         const float visualizerY = headerH + 16.0f;
         const float visualizerBottom = layout.controlStrip.getY() - gap;
-        layout.visualizerFrame = { side, visualizerY, W - side * 2.0f,
-                                   juce::jmax(150.0f, visualizerBottom - visualizerY) };
+        const float visualizerHeight = juce::jmax(0.0f, visualizerBottom - visualizerY);
+        layout.visualizerFrame = { side, visualizerY, W - side * 2.0f, visualizerHeight };
         const float sideW = layout.controlStrip.getWidth() * 0.255f;
         const float overlap = 16.0f;
         const float mainW = layout.controlStrip.getWidth() - sideW * 2.0f + overlap * 2.0f;
@@ -168,7 +134,7 @@ void ViveAudioProcessorEditor::configureKnob(juce::Slider& slider,
     addAndMakeVisible(nameLabel);
 
     valueLabel.setText("-", juce::dontSendNotification);
-    valueLabel.setFont(Fonts::mono(11.5f, true));
+    valueLabel.setFont(Fonts::semibold(11.5f));
     valueLabel.setJustificationType(juce::Justification::centred);
     valueLabel.setColour(juce::Label::textColourId, juce::Colour(0xff38223b));
     valueLabel.setColour(juce::Label::backgroundColourId, juce::Colour(0xfffff4f8));
@@ -354,7 +320,9 @@ void ViveAudioProcessorEditor::rebuildBackgroundCache()
     {
         const float d = 3.5f + mossSpeckle.nextFloat() * 7.0f;
         const float x = output.getX() + 6.0f + mossSpeckle.nextFloat() * (output.getWidth() - d - 12.0f);
-        const float y = output.getY() + 142.0f + mossSpeckle.nextFloat() * (94.0f - d);
+        const float tuftAreaTop = output.getY() + output.getHeight() * 0.56f;
+        const float tuftAreaHeight = output.getHeight() * 0.30f;
+        const float y = tuftAreaTop + mossSpeckle.nextFloat() * juce::jmax (0.0f, tuftAreaHeight - d);
         g.setColour(juce::Colour(0xff10291e).withAlpha(0.72f));
         g.fillEllipse(x + 1.0f, y + 2.0f, d, d);
         juce::ColourGradient tuft(juce::Colour(0xffc4ed73), x + d * 0.25f, y + d * 0.12f,
@@ -365,22 +333,23 @@ void ViveAudioProcessorEditor::rebuildBackgroundCache()
         g.fillEllipse(x + d * 0.23f, y + d * 0.16f, d * 0.30f, d * 0.17f);
     }
     {
+        const float yScale = output.getHeight() / 286.0f;
         juce::Path branch;
-        branch.startNewSubPath(output.getX() + 20.0f, output.getY() + 247.0f);
-        branch.cubicTo(output.getX() + 42.0f, output.getY() + 210.0f,
-                       output.getX() + 54.0f, output.getY() + 193.0f,
-                       output.getX() + 91.0f, output.getY() + 171.0f);
-        branch.cubicTo(output.getX() + 118.0f, output.getY() + 155.0f,
-                       output.getX() + 130.0f, output.getY() + 162.0f,
-                       output.getX() + 152.0f, output.getY() + 146.0f);
+        branch.startNewSubPath(output.getX() + 20.0f, output.getY() + 247.0f * yScale);
+        branch.cubicTo(output.getX() + 42.0f, output.getY() + 210.0f * yScale,
+                       output.getX() + 54.0f, output.getY() + 193.0f * yScale,
+                       output.getX() + 91.0f, output.getY() + 171.0f * yScale);
+        branch.cubicTo(output.getX() + 118.0f, output.getY() + 155.0f * yScale,
+                       output.getX() + 130.0f, output.getY() + 162.0f * yScale,
+                       output.getX() + 152.0f, output.getY() + 146.0f * yScale);
         g.setColour(juce::Colour(0xaa0b2618));
         g.strokePath(branch, juce::PathStrokeType(5.0f, juce::PathStrokeType::curved,
                                                    juce::PathStrokeType::rounded));
         g.setColour(juce::Colour(0xffd9ff87));
         g.strokePath(branch, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved,
                                                    juce::PathStrokeType::rounded));
-        for (const auto point : { juce::Point<float>(output.getX() + 91.0f, output.getY() + 171.0f),
-                                  juce::Point<float>(output.getX() + 152.0f, output.getY() + 146.0f) })
+        for (const auto point : { juce::Point<float>(output.getX() + 91.0f, output.getY() + 171.0f * yScale),
+                                  juce::Point<float>(output.getX() + 152.0f, output.getY() + 146.0f * yScale) })
         {
             g.setColour(juce::Colour(0x66d9ff82));
             g.fillEllipse(point.x - 5.0f, point.y - 5.0f, 10.0f, 10.0f);
@@ -462,7 +431,7 @@ void ViveAudioProcessorEditor::rebuildBackgroundCache()
         for (float y : { plate.getY() + 15.0f, plate.getBottom() - 15.0f })
             drawScrew(x, y, 5.5f);
 
-    g.setFont(Fonts::mono(8.0f));
+    g.setFont(Fonts::semibold(8.0f));
     g.setColour(juce::Colour(0xff877b88));
     g.drawText(JucePlugin_VersionString, bounds.reduced(padX).translated(0, -4),
                juce::Justification::bottomRight);
@@ -607,7 +576,7 @@ ViveAudioProcessorEditor::ViveAudioProcessorEditor(ViveAudioProcessor& p)
     setLookAndFeel(&customLookAndFeel);
     audioProcessor.setVisualizer(&visualizer);
 
-    boundsConstrainer.setMinimumSize(720, 560);
+    boundsConstrainer.setMinimumSize(720, 620);
     boundsConstrainer.setMaximumSize(1400, 1000);
     boundsConstrainer.setFixedAspectRatio(0.0);
     setResizable(true, true);
@@ -699,16 +668,16 @@ void ViveAudioProcessorEditor::paint(juce::Graphics& g)
                juce::Justification::centredLeft);
 
     const auto layout = makeEditorLayout(W, bounds.getHeight());
-    const float wordmarkY = layout.mainCard.getY() + 151.0f;
+    const float wordmarkY = layout.mainCard.getY() + 122.0f;
     const float center = layout.mainCard.getCentreX();
     const float wingSpan = layout.mainCard.getWidth();
-    g.setFont(Fonts::rounded(27.0f));
+    g.setFont(Fonts::rounded(22.0f));
     g.setColour(juce::Colour(0xff612345).withAlpha(0.82f));
     g.drawText("SATURATOR", (int)layout.mainCard.getX(), (int)wordmarkY,
-               (int)layout.mainCard.getWidth(), 34,
+               (int)layout.mainCard.getWidth(), 28,
                juce::Justification::centred);
 
-    const float ruleY = wordmarkY + 20.0f;
+    const float ruleY = wordmarkY + 16.0f;
     g.setColour(juce::Colour(0xffb63876).withAlpha(0.56f));
     g.drawLine(center - wingSpan * 0.49f, ruleY, center - wingSpan * 0.25f, ruleY, 1.2f);
     g.drawLine(center + wingSpan * 0.25f, ruleY, center + wingSpan * 0.49f, ruleY, 1.2f);
@@ -752,8 +721,8 @@ void ViveAudioProcessorEditor::resized()
         const float usableW = card.getWidth() - insetX * 2.0f;
         const float slotW = usableW / static_cast<float>(count);
         const float centerX = card.getX() + insetX + slotW * (static_cast<float>(index) + 0.5f);
-        const float knobSize = juce::jlimit(68.0f, 86.0f, card.getHeight() - 164.0f);
-        const float blockY = card.getY() + 25.0f;
+        const float knobSize = juce::jlimit(58.0f, 64.0f, card.getHeight() - 156.0f);
+        const float blockY = card.getY() + 19.0f;
         const float labelW = slotW - 4.0f;
         const float labelX = centerX - labelW * 0.5f;
 

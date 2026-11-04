@@ -438,7 +438,7 @@ void ViveAudioProcessor::processBlockChunk(juce::AudioBuffer<float>& buffer)
     if (visualizer != nullptr)
     {
         visualizer->setClippingThreshold(finalCeiling);
-        visualizer->pushSamples(dryBuffer, buffer, ceilingStageBuffer);
+        visualizer->pushSamples(dryBuffer, buffer, ceilingStageBuffer, numSamples, getSampleRate());
     }
 }
 

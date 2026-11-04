@@ -7,14 +7,12 @@
 //==============================================================================
 struct MeterFrame
 {
+    double durationSeconds = 0.0;
     float inputPeak      = 0.0f;
     float outputPeak     = 0.0f;
     float inputRms       = 0.0f;
     float outputRms      = 0.0f;
-    float gainReductionDb = 0.0f;
-    float overageDb      = 0.0f;
     bool  isClipping     = false;
-    bool  isSoftClipping = false;
 };
 
 
@@ -31,13 +29,14 @@ public:
 
     void paint     (juce::Graphics&)            override;
     void resized   ()                           override;
-    void mouseDown (const juce::MouseEvent&)    override;
 
     // Called from the AUDIO THREAD (see PluginProcessor::processBlock).
     // Must be lock-free / non-blocking / non-allocating.
     void pushSamples (const juce::AudioBuffer<float>& input,
                       const juce::AudioBuffer<float>& output,
-                      const juce::AudioBuffer<float>& ceilingStageOutput);
+                      const juce::AudioBuffer<float>& ceilingStageOutput,
+                      int validSampleCount,
+                      double sampleRateHz);
 
     void setClippingThreshold (float newThresholdLinear);
 
@@ -45,12 +44,8 @@ private:
     // Called on the UI/message thread at 60Hz (see startTimerHz in the .cpp).
     void timerCallback() override;
 
-    float calculateRms      (const juce::AudioBuffer<float>& buffer) const;
     float calculateChunkRms (const juce::AudioBuffer<float>& buffer,
                              int startSample, int numSamples) const;
-
-    juce::Colour getGRColour      (float grDb)      const;
-    juce::Colour getOverageColour (float overageDb) const;
 
     // ── Waveform path helpers ─────────────────────────────────────────────
     /** Builds a Catmull-Rom spline stroke path from a sequence of screen points. */
@@ -77,33 +72,25 @@ private:
     // History ring for the on-screen waveform trace, owned/mutated only by the
     // UI thread (populated by draining the fifo in timerCallback).
     std::deque<MeterFrame> frameHistory;
-    static constexpr int   maxFrames = 800;
+    static constexpr int   maxFrames = 4096;
+    static constexpr double historyDurationSeconds = 2.0;
+    double storedHistoryDurationSeconds = 0.0;
 
-    // ── Thresholds ────────────────────────────────────────────────────────
-    float clippingThreshold     = 1.0f;
-    float softClippingThreshold = 0.95f;
+    // ── Threshold ────────────────────────────────────────────────────────
+    std::atomic<float> clippingThreshold { 1.0f };
 
-    // ── Overage bar smoother ──────────────────────────────────────────────
-    float smoothedOverageDb = 0.0f;
-
-    // ── Toggle state ──────────────────────────────────────────────────────
-    bool showInput  = true;
-    bool showOutput = true;
-
-    // ── Peak smoothers (audio-thread side, written in pushSamples) ────────
-    // Simple one-pole attack/release envelope followers — see the `follow`
-    // lambda in pushSamples() for the actual attack/release math.
-    float smoothedInputPeak  = 0.0f;
-    float smoothedOutputPeak = 0.0f;
+    // ── RMS energy followers (audio-thread side) ─────────────────────────
+    // Mean-square values are exponentially averaged with a 300 ms time
+    // constant, then square-rooted for a stable RMS display.
+    double smoothedInputMeanSquare  = 0.0;
+    double smoothedOutputMeanSquare = 0.0;
 
     // ── Peak-hold (UI-thread side, updated in timerCallback) ─────────────
     float inputPeakHeld   = 0.0f;
     float outputPeakHeld  = 0.0f;
-    int   inputPeakHoldFrames  = 0;
-    int   outputPeakHoldFrames = 0;
-
-    static constexpr int   peakHoldDuration = 90;    // ~1.5 s @ 60 Hz
-    static constexpr float peakDecayRate    = 0.008f; // linear per tick
+    double inputPeakHoldSeconds  = 0.0;
+    double outputPeakHoldSeconds = 0.0;
+    double lastTimerTimeMs       = 0.0;
 
     // ── Clip flash ────────────────────────────────────────────────────────
     float clipFlashAlpha = 0.0f;

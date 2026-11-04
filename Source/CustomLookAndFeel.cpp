@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 #include "CustomLookAndFeel.h"
+#include "PluginFonts.h"
 
 //==============================================================================
 // Palette — mirrors EditorPalette in PluginEditor.h
@@ -54,16 +55,12 @@ CustomLookAndFeel::~CustomLookAndFeel() {}
 
 juce::Font CustomLookAndFeel::getTextButtonFont(juce::TextButton&, int buttonHeight)
 {
-    return juce::Font(juce::FontOptions()
-        .withName("Arial Rounded MT Bold")
-        .withHeight(juce::jlimit(10.0f, 13.0f, buttonHeight * 0.42f)));
+    return ViveFonts::bold(juce::jlimit(10.0f, 13.0f, buttonHeight * 0.42f));
 }
 
 juce::Font CustomLookAndFeel::getPopupMenuFont()
 {
-    return juce::Font(juce::FontOptions()
-        .withName("Arial Rounded MT Bold")
-        .withHeight(13.0f));
+    return ViveFonts::semiBold(13.0f);
 }
 
 //==============================================================================
@@ -162,9 +159,7 @@ void CustomLookAndFeel::drawPopupMenuItem(juce::Graphics& g,
     }
 
     // Rounded labels keep popup typography consistent with the pedal face.
-    g.setFont(juce::Font(juce::FontOptions()
-        .withName("Arial Rounded MT Bold")
-        .withHeight(12.0f)));
+    g.setFont(ViveFonts::semiBold(12.0f));
 
     g.setColour(isHighlighted ? Palette::textPrimary : Palette::textSecondary);
     g.drawText(text,
@@ -177,7 +172,8 @@ void CustomLookAndFeel::drawPopupMenuItem(juce::Graphics& g,
 //==============================================================================
 // drawRotarySlider
 //
-// Silver stompbox knobs with a ribbed dark sidewall and pedal-specific pointer.
+// Machined stompbox knobs with a layered chrome bezel, deep knurling, and an
+// inset enamel index line.
 //==============================================================================
 void CustomLookAndFeel::drawRotarySlider(juce::Graphics& g,
     int x, int y, int width, int height,
@@ -186,9 +182,9 @@ void CustomLookAndFeel::drawRotarySlider(juce::Graphics& g,
     float rotaryEndAngle,
     juce::Slider& slider)
 {
+    const float size = (float)juce::jmin (width, height);
     const float cx = (float)x + (float)width * 0.5f;
-    const float cy = (float)y + (float)height * 0.5f;
-    const float size = (float)juce::jmin(width, height);
+    const float cy = (float)y + (float)height * 0.5f + (slider.isMouseButtonDown() ? 1.0f : 0.0f);
     const float angle = rotaryStartAngle
         + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
 
@@ -200,58 +196,111 @@ void CustomLookAndFeel::drawRotarySlider(juce::Graphics& g,
                                                     : juce::Colour(0xff572b64);
     const bool hovered = slider.isMouseOverOrDragging();
     const bool pressed = slider.isMouseButtonDown();
-    const float faceR = size * 0.39f;
-    const float sideR = faceR + 3.6f;
+    const float faceR = size * 0.34f;
+    const float sideR = faceR + 4.4f;
+    const float shellR = sideR + 1.8f;
 
-    // Drop shadow, black knurled skirt, then a thin chrome lip.
-    g.setColour(juce::Colour(0x660d0710));
-    g.fillEllipse(cx - sideR - 1.0f, cy - sideR + 3.5f,
-                  (sideR + 1.0f) * 2.0f, (sideR + 1.0f) * 2.0f);
-    juce::ColourGradient skirt(juce::Colour(0xff65616a), cx, cy - sideR,
-                               juce::Colour(0xff17151b), cx, cy + sideR, false);
-    g.setGradientFill(skirt);
-    g.fillEllipse(cx - sideR, cy - sideR, sideR * 2.0f, sideR * 2.0f);
+    // Broad contact shadow and a smaller, darker cast shadow establish height.
+    g.setColour (juce::Colour (0x1f08040b));
+    g.fillEllipse (cx - shellR + 0.5f, cy - shellR + 2.5f,
+                   (shellR - 0.5f) * 2.0f, (shellR - 0.5f) * 2.0f);
+    g.setColour (juce::Colour (0x6808050b));
+    g.fillEllipse (cx - shellR + 1.2f, cy - shellR + 2.8f,
+                   (shellR - 1.2f) * 2.0f, (shellR - 1.2f) * 2.0f);
 
-    for (int i = 0; i < 48; ++i)
+    // Dark aluminum body, then a bright outer lip and a recessed knurled skirt.
+    juce::ColourGradient shell (juce::Colour (0xffaaa7ae), cx, cy - shellR,
+                                juce::Colour (0xff25232a), cx, cy + shellR, false);
+    shell.addColour (0.28, juce::Colour (0xff55515b));
+    g.setGradientFill (shell);
+    g.fillEllipse (cx - shellR, cy - shellR, shellR * 2.0f, shellR * 2.0f);
+    g.setColour (juce::Colour (0xffebe8ed).withAlpha (0.88f));
+    g.drawEllipse (cx - shellR + 0.6f, cy - shellR + 0.6f,
+                   (shellR - 0.6f) * 2.0f, (shellR - 0.6f) * 2.0f, 0.8f);
+
+    juce::ColourGradient skirt (juce::Colour (0xff625e68), cx, cy - sideR,
+                                juce::Colour (0xff111015), cx, cy + sideR, false);
+    g.setGradientFill (skirt);
+    g.fillEllipse (cx - sideR, cy - sideR, sideR * 2.0f, sideR * 2.0f);
+
+    constexpr int ribCount = 56;
+    for (int i = 0; i < ribCount; ++i)
     {
-        const float a = juce::MathConstants<float>::twoPi * (float)i / 48.0f;
-        const float outer = sideR - 0.5f;
-        const float inner = faceR + 0.8f;
-        g.setColour(i % 2 == 0 ? juce::Colour(0xffaaa6af) : juce::Colour(0xff29262e));
-        g.drawLine(cx + std::sin(a) * inner, cy - std::cos(a) * inner,
-                   cx + std::sin(a) * outer, cy - std::cos(a) * outer, 1.0f);
+        const float a = juce::MathConstants<float>::twoPi * (float)i / (float)ribCount;
+        const float inner = faceR + 1.2f;
+        const float outer = sideR - 0.35f;
+        const float x1 = cx + std::sin (a) * inner;
+        const float y1 = cy - std::cos (a) * inner;
+        const float x2 = cx + std::sin (a) * outer;
+        const float y2 = cy - std::cos (a) * outer;
+        g.setColour (juce::Colour (0xff09080d).withAlpha (i % 2 == 0 ? 0.82f : 0.50f));
+        g.drawLine (x1 + 0.45f, y1 + 0.6f, x2 + 0.45f, y2 + 0.6f, 1.35f);
+        g.setColour (i % 2 == 0 ? juce::Colour (0xffd3d0d8).withAlpha (0.88f)
+                                : juce::Colour (0xff3d3942));
+        g.drawLine (x1, y1, x2, y2, 0.85f);
     }
 
-    g.setColour(juce::Colour(0xffd9d6dc));
-    g.drawEllipse(cx - faceR - 0.6f, cy - faceR - 0.6f,
-                  (faceR + 0.6f) * 2.0f, (faceR + 0.6f) * 2.0f, 1.0f);
+    // Beveled bezel: a dark inner groove separates the metal skirt from the face.
+    g.setColour (juce::Colour (0xff111015));
+    g.fillEllipse (cx - faceR - 1.7f, cy - faceR - 1.7f,
+                   (faceR + 1.7f) * 2.0f, (faceR + 1.7f) * 2.0f);
+    juce::ColourGradient bezel (juce::Colour (0xffffffff), cx - faceR, cy - faceR,
+                                juce::Colour (0xff5b5761), cx + faceR, cy + faceR, false);
+    g.setGradientFill (bezel);
+    g.fillEllipse (cx - faceR - 1.15f, cy - faceR - 1.15f,
+                   (faceR + 1.15f) * 2.0f, (faceR + 1.15f) * 2.0f);
 
-    juce::ColourGradient face(juce::Colour(0xfffaf9fb), cx - faceR * 0.7f, cy - faceR * 0.8f,
-                              juce::Colour(0xff89868f), cx + faceR * 0.6f, cy + faceR * 0.9f, false);
-    face.addColour(0.42, juce::Colour(0xffe0dee3));
-    g.setGradientFill(face);
-    g.fillEllipse(cx - faceR, cy - faceR, faceR * 2.0f, faceR * 2.0f);
-    g.setColour(juce::Colour(0xff77727b));
-    g.drawEllipse(cx - faceR, cy - faceR, faceR * 2.0f, faceR * 2.0f, 0.8f);
+    // Satin steel face with a radial light source and a darker lower bevel.
+    juce::ColourGradient face (juce::Colour (0xfffefeff), cx - faceR * 0.38f, cy - faceR * 0.48f,
+                               juce::Colour (0xff77747c), cx, cy + faceR * 1.05f, true);
+    face.addColour (0.60, juce::Colour (0xffc9c7cd));
+    g.setGradientFill (face);
+    g.fillEllipse (cx - faceR, cy - faceR, faceR * 2.0f, faceR * 2.0f);
 
-    // A narrow colored pointer like the painted index line on the reference knobs.
-    const float tickOuter = faceR * 0.78f;
-    const float tickInner = faceR * 0.10f;
+    juce::Path faceShape;
+    faceShape.addEllipse (cx - faceR, cy - faceR, faceR * 2.0f, faceR * 2.0f);
+    g.saveState();
+    g.reduceClipRegion (faceShape);
+    juce::ColourGradient sheen (juce::Colour (0x55ffffff), cx - faceR, cy - faceR,
+                                juce::Colour (0x00ffffff), cx + faceR * 0.55f, cy + faceR * 0.35f, false);
+    g.setGradientFill (sheen);
+    g.fillRect (cx - faceR, cy - faceR, faceR * 2.0f, faceR * 1.25f);
+    g.setColour (juce::Colour (0x56ffffff));
+    g.fillEllipse (cx - faceR * 0.70f, cy - faceR * 0.78f,
+                   faceR * 1.05f, faceR * 0.37f);
+    g.restoreState();
+
+    g.setColour (juce::Colour (0xff56525b).withAlpha (hovered ? 0.85f : 0.68f));
+    g.drawEllipse (cx - faceR, cy - faceR, faceR * 2.0f, faceR * 2.0f, 0.8f);
+    g.setColour (juce::Colour (0xffffffff).withAlpha (pressed ? 0.25f : 0.72f));
+    g.drawEllipse (cx - faceR + 1.0f, cy - faceR + 1.0f,
+                   (faceR - 1.0f) * 2.0f, (faceR - 1.0f) * 2.0f, 0.55f);
+
+    // The colored pointer is painted into the face, with a dark inset and a fine specular edge.
+    const float tickOuter = faceR * 0.79f;
+    const float tickInner = faceR * 0.12f;
     const float sinA = std::sin(angle);
     const float cosA = std::cos(angle);
     const float pointerX1 = cx + sinA * tickInner;
     const float pointerY1 = cy - cosA * tickInner;
     const float pointerX2 = cx + sinA * tickOuter;
     const float pointerY2 = cy - cosA * tickOuter;
-    g.setColour(juce::Colour(0x550c0810));
-    g.drawLine(pointerX1 + 0.7f, pointerY1 + 1.0f,
-               pointerX2 + 0.7f, pointerY2 + 1.0f, 4.0f);
-    g.setColour(pointerColour.brighter(hovered && ! pressed ? 0.18f : 0.0f));
-    g.drawLine(pointerX1, pointerY1, pointerX2, pointerY2, 2.7f);
-    g.setColour(juce::Colour(0xff625c66));
-    g.fillEllipse(cx - 2.4f, cy - 2.4f, 4.8f, 4.8f);
-    g.setColour(juce::Colour(0xfff5f3f5));
-    g.fillEllipse(cx - 1.1f, cy - 1.1f, 2.2f, 2.2f);
+    g.setColour (juce::Colour (0x660b0710));
+    g.drawLine (pointerX1 + 0.9f, pointerY1 + 1.2f,
+                pointerX2 + 0.9f, pointerY2 + 1.2f, 4.0f);
+    g.setColour (juce::Colour (0xff2b2630));
+    g.drawLine (pointerX1, pointerY1, pointerX2, pointerY2, 3.4f);
+    g.setColour (pointerColour.brighter (hovered && ! pressed ? 0.16f : 0.0f));
+    g.drawLine (pointerX1, pointerY1, pointerX2, pointerY2, 2.1f);
+    g.setColour (juce::Colour (0xfff7f2ff).withAlpha (0.78f));
+    g.drawLine (pointerX1 - 0.55f, pointerY1, pointerX2 - 0.55f, pointerY2, 0.65f);
+
+    juce::ColourGradient hub (juce::Colour (0xffffffff), cx - 1.3f, cy - 1.8f,
+                              juce::Colour (0xff827e87), cx + 1.3f, cy + 1.7f, true);
+    g.setGradientFill (hub);
+    g.fillEllipse (cx - 2.1f, cy - 2.1f, 4.2f, 4.2f);
+    g.setColour (juce::Colour (0xff625d67).withAlpha (0.8f));
+    g.drawEllipse (cx - 2.1f, cy - 2.1f, 4.2f, 4.2f, 0.55f);
 }
 
 //==============================================================================

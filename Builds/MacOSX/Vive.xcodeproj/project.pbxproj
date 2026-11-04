@@ -25,6 +25,8 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		A00100000000000000000001 /* EmbeddedFontData.cpp */ = {isa = PBXBuildFile; fileRef = A00100000000000000000002; };
+
 		03D610679EA079A755974624 /* include_juce_events.mm */ = {isa = PBXBuildFile; fileRef = 3955F1E6BFFB5A7583F7C1C8; };
 		0640B50C9B143C32C9F8FA94 /* include_juce_audio_plugin_client_Standalone.cpp */ = {isa = PBXBuildFile; fileRef = CEC5B9D241458A6DF5B19A80; };
 		0810272D5AFB409A9B74EA5F /* include_juce_core_CompilationTime.cpp */ = {isa = PBXBuildFile; fileRef = 7A1C0EE5B75B007F1605C212; };
@@ -77,6 +79,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A00100000000000000000002 /* EmbeddedFontData.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = EmbeddedFontData.cpp; path = ../../Source/EmbeddedFontData.cpp; sourceTree = SOURCE_ROOT; };
+		A00100000000000000000003 /* EmbeddedFontData.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = EmbeddedFontData.h; path = ../../Source/EmbeddedFontData.h; sourceTree = SOURCE_ROOT; };
+
 		00A6B991FF29D74EF6F066DB /* CoreAudioKit.framework */ /* CoreAudioKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudioKit.framework; path = System/Library/Frameworks/CoreAudioKit.framework; sourceTree = SDKROOT; };
 		039B048DCF9C9D6B8584A04F /* juce_audio_formats */ /* juce_audio_formats */ = {isa = PBXFileReference; lastKnownFileType = folder; name = juce_audio_formats; path = "/Users/dooma/Desktop/DoomsJUCE/JUCE-master/modules/juce_audio_formats"; sourceTree = "<absolute>"; };
 		061468EAFE65EF5C8ACA9B48 /* Info-VST3_Manifest_Helper.plist */ /* Info-VST3_Manifest_Helper.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "Info-VST3_Manifest_Helper.plist"; path = "Info-VST3_Manifest_Helper.plist"; sourceTree = SOURCE_ROOT; };
@@ -334,6 +339,8 @@
 				917B91842658364297C2BFB1,
 				6803E088B09BF3F8912B0E07,
 				8A156D934B040E6878690FAB,
+				A00100000000000000000002,
+				A00100000000000000000003,
 			);
 			name = Source;
 			sourceTree = "<group>";
@@ -750,6 +757,7 @@
 				0C551706FEAB5EA6BFA6B6FF,
 				70470210C1CFD68DEA67E845,
 				2F3A028484B552CB8A11772B,
+				A00100000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
